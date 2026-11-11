@@ -117,7 +117,7 @@ class UnifiedInstallerTests(unittest.TestCase):
                 "import os, shutil, sys\n"
                 "from pathlib import Path\n"
                 "url = sys.argv[2]\n"
-                "relative = url.split('/v1.0.0/', 1)[1]\n"
+                "relative = url.split('/v1.1.0/', 1)[1]\n"
                 "shutil.copyfile(Path(os.environ['KIT_SOURCE']) / relative, sys.argv[4])\n"
                 "with open(os.environ['KIT_FETCH_LOG'], 'a') as log: log.write(url + '\\n')\n"
             )
@@ -126,8 +126,8 @@ class UnifiedInstallerTests(unittest.TestCase):
             env = dict(os.environ, PATH=tmp + os.pathsep + os.environ["PATH"],
                        KIT_SOURCE=str(INSTALLER.parent), KIT_FETCH_LOG=str(log), AI_KIT_BRANCH="main")
             for selection, files in (
-                ("--codex", ["codex/config.toml", "codex/mlflow-tracing.json"]),
-                ("--claude", ["claude/settings.json", "claude/hooks/install-plugins.py", ".mcp.json"]),
+                ("--codex", ["codex/config.toml", "codex/mlflow-tracing.json", "codex/AGENTS.md"]),
+                ("--claude", ["claude/settings.json", "claude/hooks/install-plugins.py", "claude/CLAUDE.md", ".mcp.json"]),
             ):
                 with self.subTest(selection=selection):
                     log.write_text("")
@@ -136,12 +136,12 @@ class UnifiedInstallerTests(unittest.TestCase):
                         env=env, capture_output=True, text=True,
                     )
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                    base = "https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/"
+                    base = "https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.0/"
                     self.assertEqual(log.read_text().splitlines(), [base + f for f in ["skills/check-connectors/SKILL.md", *files]])
                     folder = ".codex" if selection == "--codex" else ".claude"
                     manifest = json.loads((self.project / folder / "ai-kit.json").read_text())
-                    self.assertEqual(manifest["version"], "v1.0.0")
-                    self.assertIn("v1.0.0", result.stdout)
+                    self.assertEqual(manifest["version"], "v1.1.0")
+                    self.assertIn("v1.1.0", result.stdout)
                     self.install(selection, "--uninstall")
 
     def test_version_upgrade_preserves_settings_and_uninstall_history(self):
@@ -150,7 +150,7 @@ class UnifiedInstallerTests(unittest.TestCase):
                 kit = Path(tmp)
                 for relative in ("install.sh", ".mcp.json", "claude/settings.json",
                                  "claude/hooks/install-plugins.py", "codex/config.toml", "codex/mlflow-tracing.json",
-                                 "skills/check-connectors/SKILL.md"):
+                                 "skills/check-connectors/SKILL.md", "claude/CLAUDE.md", "codex/AGENTS.md"):
                     target = kit / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(INSTALLER.parent / relative, target)
@@ -169,7 +169,7 @@ class UnifiedInstallerTests(unittest.TestCase):
                         manifest.pop("version")
                         record.write_text(json.dumps(manifest))
                 script = kit / "install.sh"
-                script.write_text(script.read_text().replace('KIT_VERSION="v1.0.0"', 'KIT_VERSION="v1.1.0"'))
+                script.write_text(script.read_text().replace('KIT_VERSION="v1.1.0"', 'KIT_VERSION="v1.2.0"'))
                 template = kit / "codex/config.toml"
                 template.write_text(template.read_text().replace("startup_timeout_sec = 120", "startup_timeout_sec = 150"))
                 template = kit / "claude/settings.json"
@@ -181,7 +181,7 @@ class UnifiedInstallerTests(unittest.TestCase):
                 result = subprocess.run(["bash", str(script), str(self.project)], capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 for record in records:
-                    self.assertEqual(json.loads(record.read_text())["version"], "v1.1.0")
+                    self.assertEqual(json.loads(record.read_text())["version"], "v1.2.0")
                 self.assertIn('model = "personal"', codex.read_text())
                 self.assertIn("startup_timeout_sec = 150", codex.read_text())
                 self.assertEqual(json.loads(claude.read_text())["env"]["PERSONAL_SETTING"], "keep")
@@ -275,7 +275,7 @@ class UnifiedInstallerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="updated-kit-") as tmp:
             kit = Path(tmp)
             for relative in ("install.sh", ".mcp.json", "claude/settings.json", "claude/hooks/install-plugins.py",
-                             "skills/check-connectors/SKILL.md"):
+                             "skills/check-connectors/SKILL.md", "claude/CLAUDE.md", "codex/AGENTS.md"):
                 target = kit / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(INSTALLER.parent / relative, target)
@@ -297,6 +297,87 @@ class UnifiedInstallerTests(unittest.TestCase):
     def test_uninstall_without_records_is_noop(self):
         self.install("--uninstall")
         self.assertEqual(list(self.project.iterdir()), [])
+
+    def test_project_instructions_append_once_and_restore_existing_guidance(self):
+        for selector, filename, source in (("--claude", "CLAUDE.md", "claude/CLAUDE.md"),
+                                           ("--codex", "AGENTS.md", "codex/AGENTS.md")):
+            with self.subTest(selector=selector):
+                path = self.project / filename
+                original = "# Project guidance\n\nKeep the user's coding conventions."
+                path.write_text(original)
+                expected = original + "\n\n" + (INSTALLER.parent / source).read_text()
+                self.install(selector)
+                self.assertEqual(path.read_text(), expected)
+                self.install(selector)
+                self.assertEqual(path.read_text(), expected)
+                self.install(selector, "--uninstall")
+                self.assertEqual(path.read_text(), original)
+                path.unlink()
+
+    def test_tracked_project_instructions_stay_unchanged_and_print_manual_step(self):
+        self.git("init")
+        for selector, filename in (("--claude", "CLAUDE.md"), ("--codex", "AGENTS.md")):
+            with self.subTest(selector=selector):
+                path = self.project / filename
+                original = "# Shared guidance\n"
+                path.write_text(original)
+                self.git("add", filename)
+                before = self.git("status", "--porcelain")
+                result = self.install(selector)
+                self.assertIn("instruction manually", result.stdout)
+                self.assertIn("check-connectors", result.stdout)
+                self.assertEqual(path.read_text(), original)
+                self.assertEqual(self.git("status", "--porcelain"), before)
+                self.install(selector, "--uninstall")
+                self.assertEqual(path.read_text(), original)
+                self.assertEqual(self.git("status", "--porcelain"), before)
+
+    def test_edited_project_instructions_block_update_and_survive_uninstall(self):
+        for selector, filename in (("--claude", "CLAUDE.md"), ("--codex", "AGENTS.md")):
+            with self.subTest(selector=selector):
+                self.install(selector)
+                path = self.project / filename
+                edited = path.read_text() + "\nMy later edit.\n"
+                path.write_text(edited)
+                self.install(selector, success=False)
+                self.install(selector, "--uninstall")
+                self.assertEqual(path.read_text(), edited)
+                path.unlink()
+
+    def test_new_claude_instructions_keep_existing_agents_guidance_visible(self):
+        agents = self.project / "AGENTS.md"
+        original = "# Existing shared project guidance\n"
+        agents.write_text(original)
+        self.install("--claude")
+        claude = self.project / "CLAUDE.md"
+        self.assertTrue(claude.read_text().startswith("@AGENTS.md\n"))
+        first = claude.read_text()
+        self.install("--claude")
+        self.assertEqual(claude.read_text(), first)
+        self.assertEqual(agents.read_text(), original)
+        self.install("--claude", "--uninstall")
+        self.assertFalse(claude.exists())
+        self.assertEqual(agents.read_text(), original)
+
+    def test_project_instruction_symlinks_are_refused(self):
+        for selector, filename in (("--claude", "CLAUDE.md"), ("--codex", "AGENTS.md")):
+            with self.subTest(selector=selector), tempfile.TemporaryDirectory(prefix="external-instructions-") as tmp:
+                target = Path(tmp) / filename
+                target.write_text("# External guidance\n")
+                path = self.project / filename
+                path.symlink_to(target)
+                self.install(selector, success=False)
+                self.assertEqual(target.read_text(), "# External guidance\n")
+                path.unlink()
+                self.install(selector)
+                original = path.read_text()
+                path.unlink()
+                path.symlink_to(target)
+                self.install(selector, "--uninstall", success=False)
+                self.assertEqual(target.read_text(), "# External guidance\n")
+                path.unlink()
+                path.write_text(original)
+                self.install(selector, "--uninstall")
 
     def test_connector_skill_installs_only_for_selected_agent_and_preserves_edits(self):
         source = (INSTALLER.parent / "skills/check-connectors/SKILL.md").read_text()

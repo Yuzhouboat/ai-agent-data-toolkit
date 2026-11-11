@@ -10,7 +10,7 @@ Run the installer from the project where you want to use the agents. It configur
 Claude-only installation requires Python 3. Running the integrations also requires the selected
 agent, **Node.js 18+** (`npx`), and **uv** (`uvx`).
 
-Current release: [v1.0.0](https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/tag/v1.0.0).
+Current release: [v1.1.0](https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/tag/v1.1.0).
 Both installation methods below are published and available.
 
 Install the latest published release:
@@ -19,10 +19,10 @@ Install the latest published release:
 bash <(curl -fsSL https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/latest/download/install.sh)
 ```
 
-To install a specific version, use its release tag. For example, to install `v1.0.0`:
+To install a specific version, use its release tag. For example, to install `v1.1.0`:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.0/install.sh)
 ```
 
 The latest-release command downloads the `install.sh` asset attached to the latest published
@@ -52,7 +52,7 @@ Nested project directories and non-Git directories are supported. Outside Git th
 writes the same local configuration, with no Git exclusions to add.
 
 After installation, set credentials, start the selected agent in the destination project,
-and run its connector-check prompt below. Branch overrides are not supported.
+and send your first message. Project instructions request the connector check described below. Branch overrides are not supported.
 
 ## What's included
 
@@ -63,9 +63,11 @@ connector-check skill lives in `skills/` here and is installed into each agent's
 | Source file | Purpose |
 |---|---|
 | `install.sh` | One local-only installer for both agents, with selection and uninstall arguments |
+| `claude/CLAUDE.md` | First-turn connector-check instruction appended to untracked project `CLAUDE.md` |
 | `claude/settings.json` | Claude plugin, tracing and startup-hook template, merged into the destination's `.claude/settings.local.json` |
 | `claude/hooks/install-plugins.py` | Installs missing Claude plugins and updates installed plugins at startup |
 | `.mcp.json` | MySQL MCP template for Claude |
+| `codex/AGENTS.md` | First-turn connector-check instruction appended to untracked project `AGENTS.md` |
 | `codex/config.toml` | Codex MCP connections and MLflow notification-hook template |
 | `codex/mlflow-tracing.json` | MLflow tracking URI and experiment template for Codex |
 | `skills/check-connectors/SKILL.md` | Shared read-only connector-check prompt installed for each selected agent |
@@ -106,7 +108,19 @@ credentials when using Codex. Do not commit credentials.
 
 ## Check connections
 
-After installing, start a new agent session in the destination project and invoke:
+From **v1.1.0**, the installer appends a short connector-check instruction to the destination's
+`CLAUDE.md` for Claude and `AGENTS.md` for Codex. Existing untracked content is preserved;
+reinstalling does not duplicate the instruction. If a file is tracked by Git, the installer
+leaves it unchanged and prints the instruction for you to add manually.
+
+Start a new session in the destination project and send your first message. The instruction
+asks the agent to use the existing skill, show its results, and continue your task. It runs
+once per session unless you request another check or explicitly ask to skip it. This is
+Markdown guidance followed by the agent, not an enforced startup hook or background process;
+opening an idle session alone does not run the checks. Ensure the instruction is in a file
+your agent loads (for example, a Codex `AGENTS.override.md` can take precedence over `AGENTS.md`).
+
+You can still run the check manually at any time:
 
 | Agent | Prompt |
 |---|---|
@@ -125,8 +139,8 @@ separately. AWS identity does not prove Redshift database access; MLflow configu
 experiment read access does not prove the tracing hook uploaded a trace. The check does
 not install packages, change settings, or create test data.
 
-Installation itself does not check credentials or contact these services. Run this prompt
-after setting credentials, and again after changing them. It verifies the operations
+Installation itself does not check credentials or contact these services. Set credentials before
+starting the session, and run the manual prompt again after changing them. It verifies the operations
 actually attempted, rather than every tool or permission the integrations might expose.
 
 ## Claude behavior
@@ -203,10 +217,10 @@ records for uninstall. The Git exclusions and local-only plugin/server registrat
 the recorded setup. The installer does not install packages globally or commit files.
 
 Uninstall using the installer for the version recorded in your agent's `ai-kit.json`.
-For `v1.0.0`:
+For `v1.1.0`:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh) --uninstall
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.0/install.sh) --uninstall
 ```
 
 Add `--claude` or `--codex` to uninstall only one agent. Missing agent installs are skipped.
@@ -214,6 +228,11 @@ Uninstall removes recorded configuration, restores overwritten values where poss
 owned local registrations and plugins, and drops the exclusions it added. User edits are
 preserved and reported. Codex's marked configuration blocks must remain intact for an update or
 uninstall; edited blocks must be restored first. Edits outside those blocks are preserved.
+The added project instructions are recorded with their selected agent. Uninstall restores
+preexisting untracked instruction files or removes files the kit created, provided they are
+unchanged. Edited files and files later tracked by Git are kept. Restore edited installed
+instruction files before updating; the installer refuses to overwrite them.
+
 Connector skills are updated and uninstalled with their selected agent. A different existing
 skill at the destination blocks installation. Restore an edited installed skill before updating;
 uninstall preserves edited skills. Unrelated skills and preexisting matching skill files are kept.
@@ -238,7 +257,7 @@ python3 -m unittest discover -s tests -v
 ```
 
 Tests cover agent selection, local Git visibility, update/uninstall, existing settings and hooks,
-conflicts, symlinks, connector skill lifecycle, release-pinned downloads, versioned and
+conflicts, symlinks, project instruction preservation, connector skill lifecycle, release-pinned downloads, versioned and
 unversioned upgrades, and download failures. Live authentication must be verified with
 your credentials using the installed connector-check prompt.
 
@@ -262,3 +281,6 @@ References: [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp)
 and [GitHub MCP server](https://github.com/github/github-mcp-server).
 Skill locations and invocation follow the [Codex skills documentation](https://learn.chatgpt.com/docs/build-skills)
 and [Claude Code skills documentation](https://code.claude.com/docs/en/skills).
+
+Project instruction loading follows the [Codex AGENTS.md documentation](https://learn.chatgpt.com/docs/agent-configuration/agents-md)
+and [Claude Code memory documentation](https://code.claude.com/docs/en/memory).
