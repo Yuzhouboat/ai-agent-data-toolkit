@@ -1,4 +1,4 @@
-# ai-data-agent-example
+# ai-agent-data-toolkit
 
 A reusable setup for Claude Code and Codex to work with **MySQL, AWS / Redshift, GitHub,
 and MLflow tracing** through MCP servers and agent integrations.
@@ -8,7 +8,7 @@ and MLflow tracing** through MCP servers and agent integrations.
 Run this from your work project to install directly from GitHub:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-data-agent-example/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/main/install.sh)
 ```
 
 The installer configures **both agents locally by default**. Generated files are hidden through
@@ -18,8 +18,8 @@ shared installation mode. Existing tracked settings are preserved.
 Select one agent when needed:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-data-agent-example/main/install.sh) --claude
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-data-agent-example/main/install.sh) --codex
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/main/install.sh) --claude
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/main/install.sh) --codex
 ```
 
 An optional project path selects another destination. From a clone of this kit:
@@ -146,7 +146,7 @@ the recorded setup. The installer does not install packages globally or commit f
 Uninstall directly from GitHub:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-data-agent-example/main/install.sh) --uninstall
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/main/install.sh) --uninstall
 ```
 
 Add `--claude` or `--codex` to uninstall only one agent. Missing agent installs are skipped.

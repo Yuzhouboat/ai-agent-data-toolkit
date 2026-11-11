@@ -36,7 +36,7 @@ if [ "$agent" != claude ]; then
 fi
 
 BRANCH="${AI_KIT_BRANCH:-main}"
-RAW_BASE="https://raw.githubusercontent.com/Yuzhouboat/ai-data-agent-example/$BRANCH"
+RAW_BASE="https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/$BRANCH"
 KIT_FILES=()
 if [ "$agent" != codex ]; then
     KIT_FILES+=(.claude/settings.json .claude/hooks/install-plugins.py .mcp.json)
