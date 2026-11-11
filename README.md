@@ -5,17 +5,33 @@ and MLflow tracing** through MCP servers and agent integrations.
 
 ## Install into a work directory
 
-Run this from your work project to install release **v1.0.0** directly from GitHub.
+Run the installer from the project where you want to use the agents. It configures
+**both agents locally by default**. For Codex, installation requires **Python 3.11+**;
+Claude-only installation requires Python 3. Running the integrations also requires the selected
+agent, **Node.js 18+** (`npx`), and **uv** (`uvx`).
 
-The versioned commands below become available when the `v1.0.0` release is published.
+Current release: [v1.0.0](https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/tag/v1.0.0).
+The latest-release command downloads the `install.sh` asset attached to the latest published
+GitHub release. Pushing changes to `main` does not publish a new release.
+
+To install a specific version, use its release tag (shown here as `v1.0.0`):
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh)
 ```
 
-The installer configures **both agents locally by default**. Generated files are hidden through
-that clone's `.git/info/exclude`, so there is nothing to commit. There is no `--local` flag or
-shared installation mode. Existing tracked settings are preserved.
+To install the latest published release:
+
+```bash
+bash <(curl -fsSL https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/latest/download/install.sh)
+```
+
+The latest-release URL selects the published installer; that installer downloads templates
+from its own fixed release tag. It does not install unreleased changes from `main`.
+
+Generated files are hidden through the destination repository's `.git/info/exclude`, so there
+is nothing to commit. There is no `--local` flag or shared installation mode.
+Existing tracked settings are preserved; conflicting destinations cause installation to stop.
 
 Select one agent when needed:
 
@@ -30,21 +46,19 @@ An optional project path selects another destination:
 bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh) /path/to/project
 ```
 
-Append `[--claude | --codex] [--uninstall] [project-dir]` to the curl installation command as needed.
+Append `[--claude | --codex] [--uninstall] [project-dir]` to either curl command as needed.
 The target defaults to the Git repo root you're in, or the current directory outside Git.
 Nested project directories and non-Git directories are supported. Outside Git the installer
 writes the same local configuration, with no Git exclusions to add.
 
-Install requires **Python 3.11+** when Codex is selected, or Python 3 for Claude-only installs.
-You also need the selected agent installed, **Node.js 18+** (`npx`) and **uv** (`uvx`) to run the
-integrations. The installer downloads the selected templates from GitHub.
-Each installer downloads templates from its own release tag, so the script and configuration
-stay on the same version. Branch overrides are not supported.
+After installation, set credentials, start the selected agent in the destination project,
+and run its connector-check prompt below. Branch overrides are not supported.
 
 ## What's included
 
 Templates live in the visible `claude/` and `codex/` source folders. The installer writes
-agent configuration into `.claude/` and `.codex/` in the destination project.
+agent configuration into `.claude/` and `.codex/` in the destination project. The shared
+connector-check skill lives in `skills/` here and is installed into each agent's skill directory.
 
 | Source file | Purpose |
 |---|---|
@@ -80,6 +94,11 @@ export AWS_PROFILE=...
 
 AWS credentials can also come from `aws login` or the standard AWS credential environment
 variables. Use a GitHub token with access to the repositories you need.
+
+The installer does not prompt for credentials, load `.env` files or a private credentials
+file, or configure a secret manager. Missing credentials do not block installation; the
+agent may report errors later when tools start or connect. After changing exported variables,
+restart the agent from that terminal so it inherits the new values.
 
 For Claude, you may put the MLflow username and password in the `env` object of
 `.claude/settings.local.json` instead. Codex does not read Claude settings, so export the
@@ -151,10 +170,11 @@ It also refuses tracked `.codex` destination files and symlinked Codex configura
 cannot silently change shared or global configuration. Existing unrelated untracked settings can
 be extended locally.
 
-The AWS endpoint and default operation region are `us-east-1`. To select another operation region,
-add `"--metadata", "AWS_REGION=your-region"` to the proxy arguments in `codex/config.toml` in this
-kit, then rerun the installer. `AWS_REGION` alone does not select the managed server's operation
-region. Your IAM permissions must allow the MCP server and downstream AWS operations.
+The versioned Codex template sets the AWS endpoint and default operation region to `us-east-1`.
+The installer has no region-selection flag. `AWS_REGION` alone does not select the managed
+server's operation region. Your IAM permissions must allow the MCP server and downstream
+AWS operations. Re-running a published installer reapplies its templates; it does not use
+edits made to this repository's templates on `main`.
 
 To override the Codex MLflow destination without editing templates, export `MLFLOW_TRACKING_URI`
 and `MLFLOW_EXPERIMENT_ID`. The repo does not verify your server version or authentication setup.
@@ -162,6 +182,7 @@ and `MLFLOW_EXPERIMENT_ID`. The repo does not verify your server version or auth
 ## Updates and uninstall
 
 To upgrade, run the curl command for the newer release tag with the same agent selection.
+Alternatively, rerun the latest-release command to install the current published release.
 Re-running the same release reapplies that version; upgrades are never automatic. Existing
 unversioned local installs can be upgraded with the same command. Each agent records the installed
 release in the `version` field of its `ai-kit.json` file. Unrelated settings are preserved.
@@ -190,6 +211,8 @@ uninstall; edited blocks must be restored first. Edits outside those blocks are 
 Connector skills are updated and uninstalled with their selected agent. A different existing
 skill at the destination blocks installation. Restore an edited installed skill before updating;
 uninstall preserves edited skills. Unrelated skills and preexisting matching skill files are kept.
+Codex refuses a tracked `.agents/skills/check-connectors/SKILL.md`, even if its content matches.
+Claude can reuse a matching tracked connector skill without changing it.
 
 If you used an older **shared installation**, uninstall it first with the selected agent's
 `--uninstall` command, then rerun the installer. Legacy manifests are still supported for removal;
@@ -209,15 +232,23 @@ python3 -m unittest discover -s tests -v
 ```
 
 Tests cover agent selection, local Git visibility, update/uninstall, existing settings and hooks,
-conflicts, symlinks, connector skill lifecycle, release-pinned downloads, versioned and unversioned upgrades, and download
-failures. Live authentication to the four
-services must be verified with your credentials.
+conflicts, symlinks, connector skill lifecycle, release-pinned downloads, versioned and
+unversioned upgrades, and download failures. Live authentication must be verified with
+your credentials using the installed connector-check prompt.
 
-To prepare a release, update `KIT_VERSION` in `install.sh`, the release URLs in this README,
-and the version expectations in `tests/test_installer.py`, then run the checks above.
-Commit the tested files and publish a Git tag matching `KIT_VERSION` on that commit before
-announcing the install command. Remove the pending-publication note above when preparing the
-first release. Use a new version for subsequent changes; never move an existing release tag.
+To publish a release:
+
+1. Set `KIT_VERSION` in `install.sh`, the fixed-version URLs in this README, and the version
+   expectations in `tests/test_installer.py` to the same tag. Update the current release link above.
+2. Run the installer checks, commit the tested files, and push the commit.
+3. Create and push a Git tag matching `KIT_VERSION` on that commit.
+4. Publish a GitHub release for that tag and attach that commit's `install.sh` as a release
+   asset named exactly `install.sh`. Mark the release as latest when it is ready for that URL.
+5. Verify both download URLs before announcing the release. The asset must match the tagged
+   script, whose embedded version selects the matching templates.
+
+Use a new version for subsequent changes; keep published tags and assets fixed.
+The latest-release download follows [GitHub's release asset URL format](https://docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
 
 References: [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp),
 [MLflow Codex tracing](https://www.mlflow.org/docs/latest/genai/tracing/integrations/listing/codex/),
