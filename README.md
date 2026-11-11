@@ -11,23 +11,23 @@ Claude-only installation requires Python 3. Running the integrations also requir
 agent, **Node.js 18+** (`npx`), and **uv** (`uvx`).
 
 Current release: [v1.0.0](https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/tag/v1.0.0).
-The latest-release command downloads the `install.sh` asset attached to the latest published
-GitHub release. Pushing changes to `main` does not publish a new release.
+Both installation methods below are published and available.
 
-To install a specific version, use its release tag (shown here as `v1.0.0`):
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh)
-```
-
-To install the latest published release:
+Install the latest published release:
 
 ```bash
 bash <(curl -fsSL https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/latest/download/install.sh)
 ```
 
-The latest-release URL selects the published installer; that installer downloads templates
-from its own fixed release tag. It does not install unreleased changes from `main`.
+To install a specific version, use its release tag. For example, to install `v1.0.0`:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh)
+```
+
+The latest-release command downloads the `install.sh` asset attached to the latest published
+GitHub release. Both commands download templates from the selected installer's fixed release
+tag. Pushing changes to `main` does not publish a release or change an existing version.
 
 Generated files are hidden through the destination repository's `.git/info/exclude`, so there
 is nothing to commit. There is no `--local` flag or shared installation mode.
@@ -36,14 +36,14 @@ Existing tracked settings are preserved; conflicting destinations cause installa
 Select one agent when needed:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh) --claude
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh) --codex
+bash <(curl -fsSL https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/latest/download/install.sh) --claude
+bash <(curl -fsSL https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/latest/download/install.sh) --codex
 ```
 
 An optional project path selects another destination:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh) /path/to/project
+bash <(curl -fsSL https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/latest/download/install.sh) /path/to/project
 ```
 
 Append `[--claude | --codex] [--uninstall] [project-dir]` to either curl command as needed.
@@ -182,7 +182,12 @@ and `MLFLOW_EXPERIMENT_ID`. The repo does not verify your server version or auth
 ## Updates and uninstall
 
 To upgrade, run the curl command for the newer release tag with the same agent selection.
-Alternatively, rerun the latest-release command to install the current published release.
+Alternatively, rerun the latest-release command to install the current published release:
+
+```bash
+bash <(curl -fsSL https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/latest/download/install.sh)
+```
+
 Re-running the same release reapplies that version; upgrades are never automatic. Existing
 unversioned local installs can be upgraded with the same command. Each agent records the installed
 release in the `version` field of its `ai-kit.json` file. Unrelated settings are preserved.
@@ -197,7 +202,8 @@ Each agent records its changes in its own `.claude/ai-kit.json` or `.codex/ai-ki
 records for uninstall. The Git exclusions and local-only plugin/server registrations are part of
 the recorded setup. The installer does not install packages globally or commit files.
 
-Uninstall directly from GitHub:
+Uninstall using the installer for the version recorded in your agent's `ai-kit.json`.
+For `v1.0.0`:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh) --uninstall
