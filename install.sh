@@ -3,6 +3,8 @@
 # Works from a clone or through bash <(curl -fsSL .../install.sh).
 set -euo pipefail
 
+# Keep this release tag fixed: remote templates must match the installer.
+KIT_VERSION="v1.0.0"
 USAGE="Usage: install.sh [--claude | --codex] [--uninstall] [project-dir]"
 mode=local
 agent=both
@@ -15,6 +17,7 @@ while [ $# -gt 0 ]; do
         --uninstall) mode=uninstall ;;
         -h|--help)
             echo "$USAGE"
+            echo "AI data kit $KIT_VERSION"
             echo "  (default)    install local-only Claude Code and Codex configuration"
             echo "  --claude     only configure Claude Code"
             echo "  --codex      only configure Codex"
@@ -35,11 +38,10 @@ if [ "$agent" != claude ]; then
     python3 -c 'import tomllib' 2>/dev/null || { echo "Python 3.11+ is required for Codex configuration." >&2; exit 1; }
 fi
 
-BRANCH="${AI_KIT_BRANCH:-main}"
-RAW_BASE="https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/$BRANCH"
-KIT_FILES=()
+RAW_BASE="https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/$KIT_VERSION"
+KIT_FILES=(skills/check-connectors/SKILL.md)
 if [ "$agent" != codex ]; then
-    KIT_FILES+=(.claude/settings.json .claude/hooks/install-plugins.py .mcp.json)
+    KIT_FILES+=(claude/settings.json claude/hooks/install-plugins.py .mcp.json)
 fi
 if [ "$agent" != claude ]; then
     KIT_FILES+=(codex/config.toml codex/mlflow-tracing.json)
@@ -63,7 +65,7 @@ if [ "$mode" != uninstall ]; then
 fi
 
 run_claude() {
-python3 - "$SRC" "$PROJECT" "$mode" <<'PY'
+python3 - "$SRC" "$PROJECT" "$mode" "$KIT_VERSION" <<'PY'
 import hashlib
 import json
 import shutil
@@ -72,8 +74,10 @@ import sys
 from pathlib import Path
 
 src, project, mode = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+version = sys.argv[4]
 MANIFEST = ".claude/ai-kit.json"
 HOOK = ".claude/hooks/install-plugins.py"
+SKILL = ".claude/skills/check-connectors/SKILL.md"
 IGNORES = [".claude/settings.local.json", ".playwright-mcp/"]
 HEADERS = {
     "gitignore": "# AI agent settings",
@@ -199,7 +203,7 @@ def merge_json(rel, new):
         print(f"           (overwrote {key})")
 
 
-def copy(rel):
+def copy(rel, source):
     dst = project / rel
     rec = manifest["copied"].setdefault(rel, {})
     if "orig" not in rec and "created" not in rec:
@@ -208,7 +212,7 @@ def copy(rel):
         else:
             rec["created"] = True
     dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src / rel, dst)
+    shutil.copy2(src / source, dst)
     rec["sha"] = sha(dst)
     print(f"  copied   {rel}")
 
@@ -243,7 +247,8 @@ def install():
     if installed and installed != mode:
         sys.exit("Older shared Claude install detected — run install.sh --claude --uninstall, then reinstall locally.")
     manifest["mode"] = mode
-    print(f"Installing local AI settings into {project}")
+    manifest["version"] = version
+    print(f"Installing local AI settings {version} into {project}")
     if not in_git:
         print("(not a git repo — no Git exclusions needed)")
     print()
@@ -251,15 +256,27 @@ def install():
     settings_rel = ".claude/settings.local.json"
     if tracked(settings_rel):
         sys.exit(f"This repo tracks {settings_rel}, so a local install can't use it.")
-    if tracked(HOOK) and (project / HOOK).read_bytes() != (src / HOOK).read_bytes():
+    if tracked(HOOK) and (project / HOOK).read_bytes() != (src / "claude/hooks/install-plugins.py").read_bytes():
         sys.exit(f"This repo already tracks a different {HOOK}; a local install would clash with it.")
+    for rel in (".claude", ".claude/skills", ".claude/skills/check-connectors", SKILL):
+        if (project / rel).is_symlink():
+            sys.exit(f"Refusing to modify symlinked Claude skill path: {project / rel}")
+    skill = project / SKILL
+    skill_text = (src / "skills/check-connectors/SKILL.md").read_text()
+    owned = manifest["copied"].get(SKILL)
+    if owned and skill.exists() and sha(skill) != owned["sha"]:
+        sys.exit(f"{SKILL} was edited since install; restore it before updating (uninstall preserves it).")
+    if skill.exists() and (tracked(SKILL) or not owned) and skill.read_text() != skill_text:
+        sys.exit(f"Existing {SKILL} differs; move it aside before installing.")
 
-    note_dirs(".claude", ".claude/hooks")
-    settings = load(src / ".claude/settings.json")
+    note_dirs(".claude", ".claude/hooks", ".claude/skills", ".claude/skills/check-connectors")
+    settings = load(src / "claude/settings.json")
     servers = load(src / ".mcp.json").get("mcpServers", {})
     merge_json(settings_rel, settings)
     if not tracked(HOOK):
-        copy(HOOK)
+        copy(HOOK, "claude/hooks/install-plugins.py")
+    if not tracked(SKILL):
+        copy(SKILL, "skills/check-connectors/SKILL.md")
 
     if tracked(".mcp.json"):
         # The repo's own .mcp.json can't change without showing in git status,
@@ -291,6 +308,7 @@ def install():
     print("Next: set the credentials listed in the kit's README (MySQL, AWS, GitHub, MLflow),")
     print(f"then run `claude` in {project} — the SessionStart hook installs the plugins;")
     print("/reload-plugins loads them.")
+    print("Then use /check-connectors to verify tools and authentication with read-only checks.")
 
 
 # --- uninstall -----------------------------------------------------------------
@@ -420,12 +438,16 @@ def uninstall():
 manifest = load(project / MANIFEST) or {}
 for field, empty in (("json", {}), ("copied", {}), ("dirs", []), ("lines", {}), ("mcp_local", [])):
     manifest.setdefault(field, empty)
+if mode == "uninstall" and SKILL in manifest["copied"]:
+    for rel in (".claude", ".claude/skills", ".claude/skills/check-connectors", SKILL):
+        if (project / rel).is_symlink():
+            sys.exit(f"Refusing to modify symlinked Claude skill path: {project / rel}")
 uninstall() if mode == "uninstall" else install()
 PY
 }
 
 run_codex() {
-python3 - "$SRC/codex" "$PROJECT" "$mode" <<'PY'
+python3 - "$SRC/codex" "$PROJECT" "$mode" "$KIT_VERSION" <<'PY'
 import json
 import subprocess
 import sys
@@ -437,10 +459,12 @@ except ImportError:
     sys.exit("Python 3.11+ is required (for TOML validation).")
 
 src, project, mode = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+version = sys.argv[4]
 folder = project / ".codex"
 config = folder / "config.toml"
 tracing = folder / "mlflow-tracing.json"
 record = folder / "ai-kit.json"
+skill = project / ".agents/skills/check-connectors/SKILL.md"
 for path in (folder, config, tracing, record):
     if path.is_symlink():
         sys.exit(f"Refusing to modify symlinked Codex path: {path}")
@@ -466,6 +490,10 @@ def block(name, text):
 
 
 manifest = json.loads(read(record) or "{}")
+if mode != "uninstall" or "skill_set" in manifest:
+    for path in (project / ".agents", project / ".agents/skills", skill.parent, skill):
+        if path.is_symlink():
+            sys.exit(f"Refusing to modify symlinked Codex skill path: {path}")
 current = read(config)
 base = current
 # Remove only the exact blocks we installed. Refuse changed blocks before writing.
@@ -490,6 +518,18 @@ if mode == "uninstall":
                 tracing.write_text(manifest["tracing_original"])
         else:
             print("Kept .codex/mlflow-tracing.json: edited since install.")
+    if "skill_set" in manifest and skill.exists():
+        if read(skill) == manifest["skill_set"]:
+            if manifest["skill_original"] is None:
+                skill.unlink()
+            else:
+                skill.write_text(manifest["skill_original"])
+        else:
+            print("Kept .agents/skills/check-connectors/SKILL.md: edited since install.")
+    for rel in reversed(manifest.get("skill_dirs", [])):
+        path = project / rel
+        if path.is_dir() and not any(path.iterdir()):
+            path.rmdir()
     if manifest.get("exclude_lines"):
         exclude = Path(git("rev-parse", "--path-format=absolute", "--git-path", "info/exclude").stdout.strip())
         if exclude.is_file():
@@ -508,6 +548,14 @@ if manifest and manifest["mode"] != mode:
 in_git = git("rev-parse", "--is-inside-work-tree").stdout.strip() == "true"
 if any(tracked(f".codex/{name}") for name in ("config.toml", "mlflow-tracing.json", "ai-kit.json")):
     sys.exit("Local install cannot edit tracked .codex files. Configure Codex manually or remove the tracked configuration first.")
+if tracked(".agents/skills/check-connectors/SKILL.md"):
+    sys.exit("Local install cannot edit tracked .agents/skills/check-connectors/SKILL.md.")
+skill_text = read(src.parent / "skills/check-connectors/SKILL.md")
+if "skill_set" in manifest:
+    if read(skill) != manifest["skill_set"]:
+        sys.exit("Connector skill edited since install; restore it before updating (uninstall preserves it).")
+elif skill.exists() and read(skill) != skill_text:
+    sys.exit("Existing .agents/skills/check-connectors/SKILL.md differs; move it aside before installing.")
 
 kit_text = read(src / "config.toml")
 kit = tomllib.loads(kit_text)
@@ -540,8 +588,15 @@ if not manifest:
         "tracing_original": read(tracing) if tracing.exists() else None,
         "exclude_lines": [],
     }
-manifest.update(blocks=[prefix, suffix], tracing_set=trace_text)
+manifest.update(version=version, blocks=[prefix, suffix], tracing_set=trace_text)
+manifest.setdefault("skill_original", read(skill) if skill.exists() else None)
+manifest["skill_set"] = skill_text
+for path in (project / ".agents", project / ".agents/skills", skill.parent):
+    if not path.exists():
+        manifest.setdefault("skill_dirs", []).append(str(path.relative_to(project)))
 folder.mkdir(parents=True, exist_ok=True)
+skill.parent.mkdir(parents=True, exist_ok=True)
+skill.write_text(skill_text)
 config.write_text(result)
 tracing.write_text(trace_text)
 if in_git:
@@ -550,6 +605,7 @@ if in_git:
     text = read(exclude)
     # A leading newline also handles exclude files with no final newline.
     lines = [f"/{prefix_path}.codex/{name}" for name in ("config.toml", "mlflow-tracing.json", "ai-kit.json")]
+    lines.append(f"/{prefix_path}.agents/skills/check-connectors/SKILL.md")
     for line in lines:
         if line not in text.splitlines():
             addition = "\n" + line + "\n"
@@ -558,9 +614,10 @@ if in_git:
     exclude.parent.mkdir(parents=True, exist_ok=True)
     exclude.write_text(text)
 record.write_text(json.dumps(manifest, indent=2) + "\n")
-print(f"Installed local Codex kit into {project}.")
+print(f"Installed local Codex kit {version} into {project}.")
 print("Set MySQL, AWS, GitHub and MLflow credentials as described in the README.")
 print("Then start codex, trust the project, and check /mcp. No services were contacted by this installer.")
+print("Use $check-connectors to verify tools and authentication with read-only checks.")
 PY
 }
 

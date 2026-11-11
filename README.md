@@ -5,10 +5,12 @@ and MLflow tracing** through MCP servers and agent integrations.
 
 ## Install into a work directory
 
-Run this from your work project to install directly from GitHub:
+Run this from your work project to install release **v1.0.0** directly from GitHub.
+
+The versioned commands below become available when the `v1.0.0` release is published.
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh)
 ```
 
 The installer configures **both agents locally by default**. Generated files are hidden through
@@ -18,41 +20,41 @@ shared installation mode. Existing tracked settings are preserved.
 Select one agent when needed:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/main/install.sh) --claude
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/main/install.sh) --codex
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh) --claude
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh) --codex
 ```
 
-An optional project path selects another destination. From a clone of this kit:
+An optional project path selects another destination:
 
 ```bash
-./install.sh /path/to/project                 # both agents, local-only
-./install.sh --claude /path/to/project        # only Claude
-./install.sh --codex /path/to/project         # only Codex
-./install.sh --uninstall /path/to/project     # remove both recorded installs
-./install.sh --codex --uninstall /path/to/project  # remove only Codex
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh) /path/to/project
 ```
 
-Full syntax: `./install.sh [--claude | --codex] [--uninstall] [project-dir]`.
+Append `[--claude | --codex] [--uninstall] [project-dir]` to the curl installation command as needed.
 The target defaults to the Git repo root you're in, or the current directory outside Git.
 Nested project directories and non-Git directories are supported. Outside Git the installer
 writes the same local configuration, with no Git exclusions to add.
 
 Install requires **Python 3.11+** when Codex is selected, or Python 3 for Claude-only installs.
 You also need the selected agent installed, **Node.js 18+** (`npx`) and **uv** (`uvx`) to run the
-integrations. The installer uses templates from its clone when available; when run through curl,
-it downloads the selected templates from GitHub. `AI_KIT_BRANCH` selects the download branch.
-The remote commands include changes only after they have been pushed to that branch.
+integrations. The installer downloads the selected templates from GitHub.
+Each installer downloads templates from its own release tag, so the script and configuration
+stay on the same version. Branch overrides are not supported.
 
 ## What's included
+
+Templates live in the visible `claude/` and `codex/` source folders. The installer writes
+agent configuration into `.claude/` and `.codex/` in the destination project.
 
 | Source file | Purpose |
 |---|---|
 | `install.sh` | One local-only installer for both agents, with selection and uninstall arguments |
-| `.claude/settings.json` | Claude plugin, tracing and startup-hook template, merged into the destination's `.claude/settings.local.json` |
-| `.claude/hooks/install-plugins.py` | Installs missing Claude plugins and updates installed plugins at startup |
+| `claude/settings.json` | Claude plugin, tracing and startup-hook template, merged into the destination's `.claude/settings.local.json` |
+| `claude/hooks/install-plugins.py` | Installs missing Claude plugins and updates installed plugins at startup |
 | `.mcp.json` | MySQL MCP template for Claude |
 | `codex/config.toml` | Codex MCP connections and MLflow notification-hook template |
 | `codex/mlflow-tracing.json` | MLflow tracking URI and experiment template for Codex |
+| `skills/check-connectors/SKILL.md` | Shared read-only connector-check prompt installed for each selected agent |
 | `tests/` | Installer regression tests using disposable project directories |
 
 Both agents connect to the same MySQL database and use the same MLflow destination:
@@ -82,6 +84,31 @@ variables. Use a GitHub token with access to the repositories you need.
 For Claude, you may put the MLflow username and password in the `env` object of
 `.claude/settings.local.json` instead. Codex does not read Claude settings, so export the
 credentials when using Codex. Do not commit credentials.
+
+## Check connections
+
+After installing, start a new agent session in the destination project and invoke:
+
+| Agent | Prompt |
+|---|---|
+| Claude Code | `/check-connectors` |
+| Codex | `$check-connectors` |
+
+You can also ask either agent: "Check whether this project's connector tools work."
+The installer places the shared skill in `.claude/skills/check-connectors/SKILL.md` for
+Claude and `.agents/skills/check-connectors/SKILL.md` for Codex. Both are local to the
+destination project and excluded from Git when the installer owns them.
+
+The prompt checks MySQL, AWS, Redshift, GitHub, and MLflow using available tools and small
+read-only operations. It reports `PASS`, `FAIL`, or `UNTESTED` with evidence and a next step,
+without showing credential values. Missing tools and authentication errors are reported
+separately. AWS identity does not prove Redshift database access; MLflow configuration or
+experiment read access does not prove the tracing hook uploaded a trace. The check does
+not install packages, change settings, or create test data.
+
+Installation itself does not check credentials or contact these services. Run this prompt
+after setting credentials, and again after changing them. It verifies the operations
+actually attempted, rather than every tool or permission the integrations might expose.
 
 ## Claude behavior
 
@@ -134,7 +161,13 @@ and `MLFLOW_EXPERIMENT_ID`. The repo does not verify your server version or auth
 
 ## Updates and uninstall
 
-Re-run the installer with the same agent selection to update its configuration. Claude's startup
+To upgrade, run the curl command for the newer release tag with the same agent selection.
+Re-running the same release reapplies that version; upgrades are never automatic. Existing
+unversioned local installs can be upgraded with the same command. Each agent records the installed
+release in the `version` field of its `ai-kit.json` file. Unrelated settings are preserved.
+
+Release tags are fixed once published. Installer and template versions are pinned; runtime
+dependencies that use `@latest` can still change independently. Claude's startup
 hook updates its enabled plugins. MySQL and the MLflow Codex package use `@latest`; Claude's AWS
 plugins manage their MCP dependencies. The Codex AWS proxy is pinned and updated explicitly in
 the template. First startup may take longer while packages are downloaded.
@@ -146,7 +179,7 @@ the recorded setup. The installer does not install packages globally or commit f
 Uninstall directly from GitHub:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/main/install.sh) --uninstall
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.0.0/install.sh) --uninstall
 ```
 
 Add `--claude` or `--codex` to uninstall only one agent. Missing agent installs are skipped.
@@ -154,6 +187,9 @@ Uninstall removes recorded configuration, restores overwritten values where poss
 owned local registrations and plugins, and drops the exclusions it added. User edits are
 preserved and reported. Codex's marked configuration blocks must remain intact for an update or
 uninstall; edited blocks must be restored first. Edits outside those blocks are preserved.
+Connector skills are updated and uninstalled with their selected agent. A different existing
+skill at the destination blocks installation. Restore an edited installed skill before updating;
+uninstall preserves edited skills. Unrelated skills and preexisting matching skill files are kept.
 
 If you used an older **shared installation**, uninstall it first with the selected agent's
 `--uninstall` command, then rerun the installer. Legacy manifests are still supported for removal;
@@ -173,10 +209,19 @@ python3 -m unittest discover -s tests -v
 ```
 
 Tests cover agent selection, local Git visibility, update/uninstall, existing settings and hooks,
-conflicts, symlinks, and simulated direct-from-GitHub downloads. Live authentication to the four
+conflicts, symlinks, connector skill lifecycle, release-pinned downloads, versioned and unversioned upgrades, and download
+failures. Live authentication to the four
 services must be verified with your credentials.
+
+To prepare a release, update `KIT_VERSION` in `install.sh`, the release URLs in this README,
+and the version expectations in `tests/test_installer.py`, then run the checks above.
+Commit the tested files and publish a Git tag matching `KIT_VERSION` on that commit before
+announcing the install command. Remove the pending-publication note above when preparing the
+first release. Use a new version for subsequent changes; never move an existing release tag.
 
 References: [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp),
 [MLflow Codex tracing](https://www.mlflow.org/docs/latest/genai/tracing/integrations/listing/codex/),
 [AWS MCP proxy configuration](https://github.com/awslabs/mcp/blob/main/src/aws-api-mcp-server/MIGRATION.md),
 and [GitHub MCP server](https://github.com/github/github-mcp-server).
+Skill locations and invocation follow the [Codex skills documentation](https://learn.chatgpt.com/docs/build-skills)
+and [Claude Code skills documentation](https://code.claude.com/docs/en/skills).
