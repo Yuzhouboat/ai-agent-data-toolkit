@@ -1,75 +1,60 @@
 #!/usr/bin/env bash
-# Adds this repo's AI agent setup (Claude Code settings, plugins, MCP servers,
-# plugin-install hook) to a project — or takes it back out.
-#
-#   bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-data-agent-example/main/install.sh) [--local | --uninstall] [project-dir]
-#   ./install.sh [--local | --uninstall] [project-dir]        # from a clone of this repo
-#
-# project-dir defaults to the git repo you're in (or the current directory);
-# it doesn't have to be a git repo.
-#
-# Claude Code only reads its config from fixed places in the project, so the
-# kit is merged into those files rather than dropped in a folder of its own.
-# Existing settings are kept; keys the kit also sets are overwritten (and
-# listed). Re-running updates the project to the latest kit.
-#
-# Default (shared): merges into .claude/settings.json and .mcp.json, copies
-#   .claude/hooks/install-plugins.py and, in a git repo, adds ignore rules to
-#   .gitignore — for you to commit, so everyone who clones the project gets it.
-# --local: merges into .claude/settings.local.json instead (plugins install at
-#   local scope) and, in a git repo, hides every file it writes through
-#   .git/info/exclude — nothing shows in `git status`, nothing to commit.
-# --uninstall: undoes whichever install is there. Every change is recorded in
-#   .claude/ai-kit.json at install time; uninstall uninstalls the kit's plugins
-#   for this project, restores overwritten values, deletes what the kit
-#   created and drops its ignore lines. Anything edited since is left alone
-#   (and listed).
+# Install local Claude Code and Codex integrations (both by default).
+# Works from a clone or through bash <(curl -fsSL .../install.sh).
 set -euo pipefail
 
-BRANCH="${AI_KIT_BRANCH:-main}"
-RAW_BASE="https://raw.githubusercontent.com/Yuzhouboat/ai-data-agent-example/$BRANCH"
-KIT_FILES=(.claude/settings.json .claude/hooks/install-plugins.py .mcp.json)
-USAGE="Usage: install.sh [--local | --uninstall] [project-dir]"
-
-mode=shared
+USAGE="Usage: install.sh [--claude | --codex] [--uninstall] [project-dir]"
+mode=local
+agent=both
+project_arg=""
 while [ $# -gt 0 ]; do
     case "$1" in
-        --local) mode=local ;;
+        --claude|--codex)
+            [ "$agent" = both ] || { echo "Choose only one of --claude or --codex." >&2; exit 1; }
+            agent="${1#--}" ;;
         --uninstall) mode=uninstall ;;
         -h|--help)
             echo "$USAGE"
-            echo "  (default)    merge the AI settings into the project's shared files, for committing"
-            echo "  --local      merge into settings.local.json; in a git repo, hide it via .git/info/exclude"
-            echo "  --uninstall  undo the install (either kind)"
-            echo "project-dir defaults to the git repo you're in, else the current directory."
+            echo "  (default)    install local-only Claude Code and Codex configuration"
+            echo "  --claude     only configure Claude Code"
+            echo "  --codex      only configure Codex"
+            echo "  --uninstall  remove recorded installs for the selected agent(s)"
+            echo "project-dir defaults to the Git repo root, else the current directory."
             exit 0 ;;
-        -*) echo "Unknown option: $1 ($USAGE)"; exit 1 ;;
-        *) break ;;
+        -*) echo "Unknown option: $1 ($USAGE)" >&2; exit 1 ;;
+        *)
+            [ -z "$project_arg" ] || { echo "$USAGE" >&2; exit 1; }
+            project_arg="$1" ;;
     esac
     shift
 done
-
-if [ $# -gt 0 ]; then
-    PROJECT="$1"
-else
-    PROJECT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-fi
+PROJECT="${project_arg:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 PROJECT="$(cd "$PROJECT" && pwd -P)"
+command -v python3 >/dev/null 2>&1 || { echo "python3 is required." >&2; exit 1; }
+if [ "$agent" != claude ]; then
+    python3 -c 'import tomllib' 2>/dev/null || { echo "Python 3.11+ is required for Codex configuration." >&2; exit 1; }
+fi
 
-command -v python3 >/dev/null 2>&1 || { echo "python3 is required."; exit 1; }
-
+BRANCH="${AI_KIT_BRANCH:-main}"
+RAW_BASE="https://raw.githubusercontent.com/Yuzhouboat/ai-data-agent-example/$BRANCH"
+KIT_FILES=()
+if [ "$agent" != codex ]; then
+    KIT_FILES+=(.claude/settings.json .claude/hooks/install-plugins.py .mcp.json)
+fi
+if [ "$agent" != claude ]; then
+    KIT_FILES+=(codex/config.toml codex/mlflow-tracing.json)
+fi
 SRC="$(mktemp -d)"
 trap 'rm -rf "$SRC"' EXIT
 if [ "$mode" != uninstall ]; then
-    # Kit files: from this clone if we're running from one, else GitHub.
     HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
     if [ -n "$HERE" ] && [ "$HERE" = "$PROJECT" ]; then
-        echo "$PROJECT is the kit itself — pass the project to install into."
+        echo "$PROJECT is the kit itself — pass the project to install into." >&2
         exit 1
     fi
     for f in "${KIT_FILES[@]}"; do
         mkdir -p "$SRC/$(dirname "$f")"
-        if [ -n "$HERE" ] && [ -f "$HERE/.claude/hooks/install-plugins.py" ]; then
+        if [ -n "$HERE" ] && [ -f "$HERE/$f" ]; then
             cp "$HERE/$f" "$SRC/$f"
         else
             curl -fsSL "$RAW_BASE/$f" -o "$SRC/$f"
@@ -77,6 +62,7 @@ if [ "$mode" != uninstall ]; then
     done
 fi
 
+run_claude() {
 python3 - "$SRC" "$PROJECT" "$mode" <<'PY'
 import hashlib
 import json
@@ -217,10 +203,10 @@ def copy(rel):
     dst = project / rel
     rec = manifest["copied"].setdefault(rel, {})
     if "orig" not in rec and "created" not in rec:
-        if dst.exists() and dst.read_bytes() != (src / rel).read_bytes():
+        if dst.exists():
             rec["orig"] = dst.read_text()
         else:
-            rec["created"] = not dst.exists()
+            rec["created"] = True
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src / rel, dst)
     rec["sha"] = sha(dst)
@@ -255,19 +241,18 @@ def add_lines(kind, lines):
 def install():
     installed = manifest.get("mode")
     if installed and installed != mode:
-        sys.exit(f"Already installed in {installed} mode — run install.sh --uninstall first to switch.")
+        sys.exit("Older shared Claude install detected — run install.sh --claude --uninstall, then reinstall locally.")
     manifest["mode"] = mode
-    print(f"Installing AI settings into {project}{' (local only)' if mode == 'local' else ''}")
+    print(f"Installing local AI settings into {project}")
     if not in_git:
-        print("(not a git repo — nothing to hide from git or add to .gitignore)")
+        print("(not a git repo — no Git exclusions needed)")
     print()
 
-    settings_rel = ".claude/settings.json" if mode == "shared" else ".claude/settings.local.json"
-    if mode == "local":
-        if tracked(settings_rel):
-            sys.exit(f"This repo tracks {settings_rel}, so a local install can't use it.")
-        if tracked(HOOK) and (project / HOOK).read_bytes() != (src / HOOK).read_bytes():
-            sys.exit(f"This repo already tracks a different {HOOK}; a local install would clash with it.")
+    settings_rel = ".claude/settings.local.json"
+    if tracked(settings_rel):
+        sys.exit(f"This repo tracks {settings_rel}, so a local install can't use it.")
+    if tracked(HOOK) and (project / HOOK).read_bytes() != (src / HOOK).read_bytes():
+        sys.exit(f"This repo already tracks a different {HOOK}; a local install would clash with it.")
 
     note_dirs(".claude", ".claude/hooks")
     settings = load(src / ".claude/settings.json")
@@ -276,11 +261,13 @@ def install():
     if not tracked(HOOK):
         copy(HOOK)
 
-    if mode == "local" and tracked(".mcp.json"):
+    if tracked(".mcp.json"):
         # The repo's own .mcp.json can't change without showing in git status,
         # so register the servers in this clone's local scope (~/.claude.json).
         for name, cfg in servers.items():
-            claude("mcp", "remove", "--scope", "local", name)
+            # Only replace registrations this kit owns; preserve existing local servers.
+            if name in manifest["mcp_local"]:
+                claude("mcp", "remove", "--scope", "local", name)
             if claude("mcp", "add-json", "--scope", "local", name, json.dumps(cfg)):
                 if name not in manifest["mcp_local"]:
                     manifest["mcp_local"].append(name)
@@ -292,21 +279,14 @@ def install():
         merge_json(".mcp.json", {"mcpServers": servers})
 
     save(project / MANIFEST, manifest)
-    if in_git and mode == "shared":
-        add_lines("gitignore", IGNORES)
-    elif in_git:
+    if in_git:
         written = [settings_rel, MANIFEST, *manifest["copied"], *manifest["json"]]
         hidden = dict.fromkeys(["/" + prefix + p for p in [*IGNORES, *written]])
         add_lines("exclude", list(hidden))
     save(project / MANIFEST, manifest)  # again, now with the ignore lines
 
     print()
-    if mode == "local":
-        print("Local install done" + (" — nothing to commit; git status stays clean." if in_git else "."))
-    elif in_git:
-        print("Commit it so everyone who clones the project gets it:")
-        print(f"  git -C '{project}' add .claude .mcp.json .gitignore && git -C '{project}' commit -m 'Add AI agent settings'")
-    print("To undo: install.sh --uninstall" + (f" '{project}'" if Path.cwd() != project else ""))
+    print("Local install done" + (" — nothing to commit; git status stays clean." if in_git else "."))
     print()
     print("Next: set the credentials listed in the kit's README (MySQL, AWS, GitHub, MLflow),")
     print(f"then run `claude` in {project} — the SessionStart hook installs the plugins;")
@@ -382,7 +362,7 @@ def uncopy(rel, rec, kept):
     elif "orig" in rec:
         path.write_text(rec["orig"])
         print(f"  restored {rel}")
-    else:
+    elif rec.get("created"):
         path.unlink()
         print(f"  removed  {rel}")
 
@@ -442,3 +422,168 @@ for field, empty in (("json", {}), ("copied", {}), ("dirs", []), ("lines", {}), 
     manifest.setdefault(field, empty)
 uninstall() if mode == "uninstall" else install()
 PY
+}
+
+run_codex() {
+python3 - "$SRC/codex" "$PROJECT" "$mode" <<'PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+try:
+    import tomllib
+except ImportError:
+    sys.exit("Python 3.11+ is required (for TOML validation).")
+
+src, project, mode = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+folder = project / ".codex"
+config = folder / "config.toml"
+tracing = folder / "mlflow-tracing.json"
+record = folder / "ai-kit.json"
+for path in (folder, config, tracing, record):
+    if path.is_symlink():
+        sys.exit(f"Refusing to modify symlinked Codex path: {path}")
+
+
+def read(path):
+    return path.read_text() if path.exists() else ""
+
+
+def git(*args):
+    try:
+        return subprocess.run(["git", "-C", str(project), *args], capture_output=True, text=True)
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(args, 1, "", "")
+
+
+def tracked(path):
+    return git("ls-files", "--error-unmatch", "--", path).returncode == 0
+
+
+def block(name, text):
+    return f"# BEGIN AI data kit: {name}\n{text.rstrip()}\n# END AI data kit: {name}\n"
+
+
+manifest = json.loads(read(record) or "{}")
+current = read(config)
+base = current
+# Remove only the exact blocks we installed. Refuse changed blocks before writing.
+for part in manifest.get("blocks", []):
+    if base.count(part) != 1:
+        sys.exit("The kit's Codex config blocks were edited or removed; restore them before updating/uninstalling.")
+    base = base.replace(part, "", 1)
+
+if mode == "uninstall":
+    if not manifest:
+        sys.exit("No .codex/ai-kit.json found; nothing recorded to uninstall.")
+    if config.exists():
+        if not base and manifest["config_created"]:
+            config.unlink()
+        else:
+            config.write_text(base)
+    if tracing.exists():
+        if read(tracing) == manifest["tracing_set"]:
+            if manifest["tracing_original"] is None:
+                tracing.unlink()
+            else:
+                tracing.write_text(manifest["tracing_original"])
+        else:
+            print("Kept .codex/mlflow-tracing.json: edited since install.")
+    if manifest.get("exclude_lines"):
+        exclude = Path(git("rev-parse", "--path-format=absolute", "--git-path", "info/exclude").stdout.strip())
+        if exclude.is_file():
+            text = read(exclude)
+            for line in manifest["exclude_lines"]:
+                text = text.replace(line, "", 1)
+            exclude.write_text(text)
+    record.unlink()
+    if manifest["dir_created"] and not any(folder.iterdir()):
+        folder.rmdir()
+    print(f"Uninstalled Codex kit from {project}.")
+    sys.exit(0)
+
+if manifest and manifest["mode"] != mode:
+    sys.exit("Older shared Codex install detected — run install.sh --codex --uninstall, then reinstall locally.")
+in_git = git("rev-parse", "--is-inside-work-tree").stdout.strip() == "true"
+if any(tracked(f".codex/{name}") for name in ("config.toml", "mlflow-tracing.json", "ai-kit.json")):
+    sys.exit("Local install cannot edit tracked .codex files. Configure Codex manually or remove the tracked configuration first.")
+
+kit_text = read(src / "config.toml")
+kit = tomllib.loads(kit_text)
+existing = tomllib.loads(base)
+# Keep another notifier intact instead of silently disabling it.
+if "notify" in existing:
+    sys.exit("Existing Codex notify hook: combine it with MLflow manually before installing this kit.")
+conflicts = set(existing.get("mcp_servers", {})) & set(kit["mcp_servers"])
+if conflicts:
+    sys.exit("Existing Codex MCP server names conflict: " + ", ".join(sorted(conflicts)) + ". Rename/remove them before installing.")
+trace_text = read(src / "mlflow-tracing.json")
+json.loads(trace_text)
+if not manifest and tracing.exists() and read(tracing) != trace_text:
+    sys.exit("Existing .codex/mlflow-tracing.json differs; move it aside before installing.")
+if manifest and read(tracing) != manifest["tracing_set"]:
+    sys.exit("MLflow config edited since install; restore it before updating (uninstall preserves it).")
+
+# The notify key must precede all TOML tables. Server tables go at the end.
+root, servers = kit_text.split("[mcp_servers.", 1)
+prefix = block("notify", root)
+suffix = "\n" + block("servers", "[mcp_servers." + servers)
+result = prefix + base + suffix
+# Validate the complete file before making any changes.
+tomllib.loads(result)
+if not manifest:
+    manifest = {
+        "mode": mode,
+        "config_created": not config.exists(),
+        "dir_created": not folder.exists(),
+        "tracing_original": read(tracing) if tracing.exists() else None,
+        "exclude_lines": [],
+    }
+manifest.update(blocks=[prefix, suffix], tracing_set=trace_text)
+folder.mkdir(parents=True, exist_ok=True)
+config.write_text(result)
+tracing.write_text(trace_text)
+if in_git:
+    prefix_path = git("rev-parse", "--show-prefix").stdout.strip()
+    exclude = Path(git("rev-parse", "--path-format=absolute", "--git-path", "info/exclude").stdout.strip())
+    text = read(exclude)
+    # A leading newline also handles exclude files with no final newline.
+    lines = [f"/{prefix_path}.codex/{name}" for name in ("config.toml", "mlflow-tracing.json", "ai-kit.json")]
+    for line in lines:
+        if line not in text.splitlines():
+            addition = "\n" + line + "\n"
+            text += addition
+            manifest["exclude_lines"].append(addition)
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    exclude.write_text(text)
+record.write_text(json.dumps(manifest, indent=2) + "\n")
+print(f"Installed local Codex kit into {project}.")
+print("Set MySQL, AWS, GitHub and MLflow credentials as described in the README.")
+print("Then start codex, trust the project, and check /mcp. No services were contacted by this installer.")
+PY
+}
+
+# Run Codex first so Codex config conflicts are detected before changing Claude files.
+# Uninstall tolerates a project that only has one of the two kits installed.
+if [ "$agent" != claude ]; then
+    if [ "$mode" != uninstall ] || [ -f "$PROJECT/.codex/ai-kit.json" ]; then
+        run_codex
+    else
+        echo "No recorded Codex install in $PROJECT; skipping."
+    fi
+fi
+if [ "$agent" != codex ]; then
+    if [ "$mode" != uninstall ] || [ -f "$PROJECT/.claude/ai-kit.json" ]; then
+        run_claude
+    else
+        echo "No recorded Claude install in $PROJECT; skipping."
+    fi
+fi
+
+if [ "$mode" != uninstall ]; then
+    selection=""
+    [ "$agent" = both ] || selection=" --$agent"
+    echo "Configured agent selection: $agent."
+    echo "To undo, rerun this installer$selection --uninstall \"$PROJECT\""
+fi

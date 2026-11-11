@@ -1,0 +1,18 @@
+# Conversation tracing runs after each completed Codex CLI turn.
+notify = ["npx", "-y", "@mlflow/codex@latest", "notify-hook"]
+
+[mcp_servers.mysql]
+command = "npx"
+args = ["-y", "@toolbox-sdk/server@latest", "--prebuilt", "mysql", "--stdio"]
+env_vars = ["MYSQL_HOST", "MYSQL_PORT", "MYSQL_DATABASE", "MYSQL_USER", "MYSQL_PASSWORD"]
+startup_timeout_sec = 120
+
+[mcp_servers.aws-mcp]
+command = "uvx"
+args = ["mcp-proxy-for-aws@1.6.3", "https://aws-mcp.us-east-1.api.aws/mcp"]
+env_vars = ["AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE"]
+startup_timeout_sec = 120
+
+[mcp_servers.github]
+url = "https://api.githubcopilot.com/mcp/"
+bearer_token_env_var = "GITHUB_PERSONAL_ACCESS_TOKEN"
