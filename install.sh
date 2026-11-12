@@ -4,7 +4,7 @@
 set -euo pipefail
 
 # Keep this release tag fixed: remote templates must match the installer.
-KIT_VERSION="v1.1.1"
+KIT_VERSION="v1.1.2"
 USAGE="Usage: install.sh [--claude | --codex] [--uninstall] [project-dir]"
 mode=local
 agent=both
@@ -41,10 +41,10 @@ fi
 RAW_BASE="https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/$KIT_VERSION"
 KIT_FILES=(skills/check-connectors/SKILL.md)
 if [ "$agent" != codex ]; then
-    KIT_FILES+=(claude/settings.json claude/hooks/install-plugins.py .mcp.json)
+    KIT_FILES+=(claude/settings.json claude/.mcp.json)
 fi
 if [ "$agent" != claude ]; then
-    KIT_FILES+=(codex/config.toml codex/mlflow-tracing.json)
+    KIT_FILES+=(codex/config.toml codex/mlflow-tracing.json codex/hooks.json codex/hooks/mlflow_stop.py)
 fi
 SRC="$(mktemp -d)"
 trap 'rm -rf "$SRC"' EXIT
@@ -68,6 +68,7 @@ run_claude() {
 python3 - "$SRC" "$PROJECT" "$mode" "$KIT_VERSION" <<'PY'
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -147,7 +148,71 @@ def node(data, path):
 def claude(*args):
     if not shutil.which("claude"):
         return False
-    return subprocess.run(["claude", *args], cwd=project, capture_output=True, text=True).returncode == 0
+    try:
+        return subprocess.run(["claude", *args], cwd=project, capture_output=True, text=True, timeout=240).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def retire_startup_hook(settings_rel):
+    """Remove only the startup hook recorded by an older toolkit install."""
+    rec = manifest["json"].get(settings_rel)
+    if rec:
+        data = load(project / settings_rel)
+        for path, item in list(rec["items"]):
+            if path == ["hooks", "SessionStart"] and any(HOOK in (cmd or "") for cmd in commands(item)):
+                entries = node(data, path)
+                if isinstance(entries, list) and item in entries:
+                    entries.remove(item)
+                rec["items"].remove([path, item])
+                # Restore any preexisting group replaced by the old installer.
+                for old_path, old_item in list(rec["removed"]):
+                    if old_path == path and commands(old_item) & commands(item):
+                        if isinstance(entries, list) and old_item not in entries:
+                            entries.append(old_item)
+                        rec["removed"].remove([old_path, old_item])
+        for path in sorted(rec["containers"], key=len, reverse=True):
+            parent, value = node(data, path[:-1]), node(data, path)
+            if path[0] == "hooks" and isinstance(parent, dict) and value in ({}, []):
+                del parent[path[-1]]
+        save(project / settings_rel, data)
+    if HOOK in manifest["copied"]:
+        kept = []
+        uncopy(HOOK, manifest["copied"].pop(HOOK), kept)
+        for message in kept:
+            print(f"  {message}")
+    hooks = project / ".claude/hooks"
+    if ".claude/hooks" in manifest["dirs"] and hooks.is_dir() and not any(hooks.iterdir()):
+        hooks.rmdir()
+
+
+def install_plugins(settings):
+    """Install at setup time; leave updates to Claude's native plugin management."""
+    if not shutil.which("claude"):
+        print("  !! Claude CLI unavailable; install it, then rerun this installer to install plugins.")
+        return
+    config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    known = load(config_dir / "plugins/known_marketplaces.json")
+    marketplaces = settings.get("extraKnownMarketplaces", {})
+    for market in dict.fromkeys(p.split("@", 1)[1] for p, on in settings["enabledPlugins"].items() if on):
+        if market in known:
+            continue
+        source = marketplaces.get(market, {}).get("source", {})
+        repo = source.get("repo") if source.get("source") == "github" else None
+        if market == "claude-plugins-official":
+            repo = "anthropics/claude-plugins-official"
+        if repo:
+            args = ["plugin", "marketplace", "add", repo]
+            if source.get("sparsePaths"):
+                args += ["--sparse", *source["sparsePaths"]]
+            if not claude(*args):
+                print(f"  !! couldn't register marketplace {market}; check /plugin and rerun this installer.")
+    for plugin, on in settings["enabledPlugins"].items():
+        if on:
+            if claude("plugin", "install", plugin, "--scope", "local"):
+                print(f"  installed plugin {plugin} (local scope)")
+            else:
+                print(f"  !! couldn't install {plugin}; run in {project}: claude plugin install {plugin} --scope local")
 
 
 # --- install -------------------------------------------------------------------
@@ -256,8 +321,6 @@ def install():
     settings_rel = ".claude/settings.local.json"
     if tracked(settings_rel):
         sys.exit(f"This repo tracks {settings_rel}, so a local install can't use it.")
-    if tracked(HOOK) and (project / HOOK).read_bytes() != (src / "claude/hooks/install-plugins.py").read_bytes():
-        sys.exit(f"This repo already tracks a different {HOOK}; a local install would clash with it.")
     for rel in (".claude", ".claude/skills", ".claude/skills/check-connectors", SKILL):
         if (project / rel).is_symlink():
             sys.exit(f"Refusing to modify symlinked Claude skill path: {project / rel}")
@@ -269,12 +332,11 @@ def install():
     if skill.exists() and (tracked(SKILL) or not owned) and skill.read_text() != skill_text:
         sys.exit(f"Existing {SKILL} differs; move it aside before installing.")
 
-    note_dirs(".claude", ".claude/hooks", ".claude/skills", ".claude/skills/check-connectors")
+    note_dirs(".claude", ".claude/skills", ".claude/skills/check-connectors")
     settings = load(src / "claude/settings.json")
-    servers = load(src / ".mcp.json").get("mcpServers", {})
+    servers = load(src / "claude/.mcp.json").get("mcpServers", {})
+    retire_startup_hook(settings_rel)
     merge_json(settings_rel, settings)
-    if not tracked(HOOK):
-        copy(HOOK, "claude/hooks/install-plugins.py")
     if not tracked(SKILL):
         copy(SKILL, "skills/check-connectors/SKILL.md")
 
@@ -306,8 +368,8 @@ def install():
     print("Local install done" + (" — nothing to commit; git status stays clean." if in_git else "."))
     print()
     print("Next: set the credentials listed in the kit's README (MySQL, AWS, GitHub, MLflow),")
-    print(f"then run `claude` in {project} — the SessionStart hook installs the plugins;")
-    print("/reload-plugins loads them.")
+    install_plugins(settings)
+    print(f"then run `claude` in {project}. If already running, use /reload-plugins.")
     print("Then use /check-connectors to verify tools and authentication with read-only checks.")
 
 
@@ -316,7 +378,7 @@ def uninstall_plugins(rec, scope):
     """Uninstall the plugins the kit enabled, for this project only."""
     ours = [json.loads(k)[1] for k, r in rec["keys"].items()
             if json.loads(k)[0] == "enabledPlugins" and r.get("absent")]
-    config = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
+    config = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "plugins/installed_plugins.json"
     installed = load(config).get("plugins", {})
     for plugin in ours:
         here = [e for e in installed.get(plugin, [])
@@ -449,6 +511,7 @@ PY
 run_codex() {
 python3 - "$SRC/codex" "$PROJECT" "$mode" "$KIT_VERSION" <<'PY'
 import json
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -465,7 +528,9 @@ config = folder / "config.toml"
 tracing = folder / "mlflow-tracing.json"
 record = folder / "ai-kit.json"
 skill = project / ".agents/skills/check-connectors/SKILL.md"
-for path in (folder, config, tracing, record):
+hooks = folder / "hooks.json"
+adapter = folder / "hooks/mlflow_stop.py"
+for path in (folder, config, tracing, record, hooks, adapter.parent, adapter):
     if path.is_symlink():
         sys.exit(f"Refusing to modify symlinked Codex path: {path}")
 
@@ -502,6 +567,20 @@ for part in manifest.get("blocks", []):
         sys.exit("The kit's Codex config blocks were edited or removed; restore them before updating/uninstalling.")
     base = base.replace(part, "", 1)
 
+# Remove only our previous Stop entry before merging an update. Other hooks
+# remain in place; edited managed entries require review before replacement.
+hooks_text = read(hooks)
+hooks_data = json.loads(hooks_text or "{}")
+if not isinstance(hooks_data, dict) or not isinstance(hooks_data.get("hooks", {}), dict):
+    sys.exit("Existing Codex hooks.json must contain a hooks object.")
+stop_entries = hooks_data.get("hooks", {}).get("Stop", [])
+if not isinstance(stop_entries, list):
+    sys.exit("Existing Codex Stop hooks must be an array.")
+if "hook_entry" in manifest:
+    if stop_entries.count(manifest["hook_entry"]) != 1:
+        sys.exit("The kit's Codex Stop hook was edited or removed; restore it before updating/uninstalling.")
+    stop_entries.remove(manifest["hook_entry"])
+
 if mode == "uninstall":
     if not manifest:
         sys.exit("No .codex/ai-kit.json found; nothing recorded to uninstall.")
@@ -510,6 +589,29 @@ if mode == "uninstall":
             config.unlink()
         else:
             config.write_text(base)
+    if "hook_entry" in manifest:
+        original = json.loads(manifest["hooks_original"] or "{}")
+        if not stop_entries and "Stop" not in original.get("hooks", {}):
+            hooks_data["hooks"].pop("Stop", None)
+        if not hooks_data.get("hooks") and "hooks" not in original:
+            hooks_data.pop("hooks", None)
+        if hooks_data == original:
+            if manifest["hooks_original"] is None:
+                hooks.unlink()
+            else:
+                hooks.write_text(manifest["hooks_original"])
+        else:
+            hooks.write_text(json.dumps(hooks_data, indent=2) + "\n")
+    if "adapter_set" in manifest and adapter.exists():
+        if read(adapter) == manifest["adapter_set"]:
+            if manifest["adapter_original"] is None:
+                adapter.unlink()
+            else:
+                adapter.write_text(manifest["adapter_original"])
+        else:
+            print("Kept .codex/hooks/mlflow_stop.py: edited since install.")
+    if manifest.get("hooks_dir_created") and adapter.parent.is_dir() and not any(adapter.parent.iterdir()):
+        adapter.parent.rmdir()
     if tracing.exists():
         if read(tracing) == manifest["tracing_set"]:
             if manifest["tracing_original"] is None:
@@ -546,7 +648,7 @@ if mode == "uninstall":
 if manifest and manifest["mode"] != mode:
     sys.exit("Older shared Codex install detected — run install.sh --codex --uninstall, then reinstall locally.")
 in_git = git("rev-parse", "--is-inside-work-tree").stdout.strip() == "true"
-if any(tracked(f".codex/{name}") for name in ("config.toml", "mlflow-tracing.json", "ai-kit.json")):
+if any(tracked(f".codex/{name}") for name in ("config.toml", "mlflow-tracing.json", "ai-kit.json", "hooks.json", "hooks/mlflow_stop.py")):
     sys.exit("Local install cannot edit tracked .codex files. Configure Codex manually or remove the tracked configuration first.")
 if tracked(".agents/skills/check-connectors/SKILL.md"):
     sys.exit("Local install cannot edit tracked .agents/skills/check-connectors/SKILL.md.")
@@ -560,9 +662,7 @@ elif skill.exists() and read(skill) != skill_text:
 kit_text = read(src / "config.toml")
 kit = tomllib.loads(kit_text)
 existing = tomllib.loads(base)
-# Keep another notifier intact instead of silently disabling it.
-if "notify" in existing:
-    sys.exit("Existing Codex notify hook: combine it with MLflow manually before installing this kit.")
+# Project-local lifecycle hooks coexist with unrelated notifier settings.
 conflicts = set(existing.get("mcp_servers", {})) & set(kit["mcp_servers"])
 if conflicts:
     sys.exit("Existing Codex MCP server names conflict: " + ", ".join(sorted(conflicts)) + ". Rename/remove them before installing.")
@@ -573,11 +673,21 @@ if not manifest and tracing.exists() and read(tracing) != trace_text:
 if manifest and read(tracing) != manifest["tracing_set"]:
     sys.exit("MLflow config edited since install; restore it before updating (uninstall preserves it).")
 
-# The notify key must precede all TOML tables. Server tables go at the end.
-root, servers = kit_text.split("[mcp_servers.", 1)
-prefix = block("notify", root)
-suffix = "\n" + block("servers", "[mcp_servers." + servers)
-result = prefix + base + suffix
+adapter_text = read(src / "hooks/mlflow_stop.py")
+if "adapter_set" in manifest and read(adapter) != manifest["adapter_set"]:
+    sys.exit("MLflow adapter edited since install; restore it before updating (uninstall preserves it).")
+if "adapter_set" not in manifest and adapter.exists() and read(adapter) != adapter_text:
+    sys.exit("Existing MLflow adapter differs; move it aside before installing.")
+hook_entry = json.loads(read(src / "hooks.json"))["hooks"]["Stop"][0]
+hook_entry["hooks"][0]["command"] = hook_entry["hooks"][0]["command"].replace(
+    "__MLFLOW_STOP_SCRIPT__", shlex.quote(str(adapter)))
+if hook_entry in stop_entries:
+    sys.exit("An identical MLflow Stop hook already exists outside this install; remove it before installing.")
+hooks_data.setdefault("hooks", {}).setdefault("Stop", []).append(hook_entry)
+
+# Server tables go at the end. Older manifests' notify blocks were removed above.
+suffix = "\n" + block("servers", kit_text)
+result = base + suffix
 # Validate the complete file before making any changes.
 tomllib.loads(result)
 if not manifest:
@@ -588,7 +698,11 @@ if not manifest:
         "tracing_original": read(tracing) if tracing.exists() else None,
         "exclude_lines": [],
     }
-manifest.update(version=version, blocks=[prefix, suffix], tracing_set=trace_text)
+manifest.update(version=version, blocks=[suffix], tracing_set=trace_text)
+manifest.setdefault("hooks_original", hooks_text if hooks.exists() else None)
+manifest.setdefault("adapter_original", read(adapter) if adapter.exists() else None)
+manifest.setdefault("hooks_dir_created", not adapter.parent.exists())
+manifest.update(hook_entry=hook_entry, adapter_set=adapter_text)
 manifest.setdefault("skill_original", read(skill) if skill.exists() else None)
 manifest["skill_set"] = skill_text
 for path in (project / ".agents", project / ".agents/skills", skill.parent):
@@ -599,12 +713,15 @@ skill.parent.mkdir(parents=True, exist_ok=True)
 skill.write_text(skill_text)
 config.write_text(result)
 tracing.write_text(trace_text)
+adapter.parent.mkdir(exist_ok=True)
+adapter.write_text(adapter_text)
+hooks.write_text(json.dumps(hooks_data, indent=2) + "\n")
 if in_git:
     prefix_path = git("rev-parse", "--show-prefix").stdout.strip()
     exclude = Path(git("rev-parse", "--path-format=absolute", "--git-path", "info/exclude").stdout.strip())
     text = read(exclude)
     # A leading newline also handles exclude files with no final newline.
-    lines = [f"/{prefix_path}.codex/{name}" for name in ("config.toml", "mlflow-tracing.json", "ai-kit.json")]
+    lines = [f"/{prefix_path}.codex/{name}" for name in ("config.toml", "mlflow-tracing.json", "ai-kit.json", "hooks.json", "hooks/mlflow_stop.py")]
     lines.append(f"/{prefix_path}.agents/skills/check-connectors/SKILL.md")
     for line in lines:
         if line not in text.splitlines():
@@ -617,6 +734,7 @@ record.write_text(json.dumps(manifest, indent=2) + "\n")
 print(f"Installed local Codex kit {version} into {project}.")
 print("Set MySQL, AWS, GitHub and MLflow credentials as described in the README.")
 print("Then start codex, trust the project, and check /mcp. No services were contacted by this installer.")
+print("Review and trust the project Stop hook using /hooks or Review hooks before automatic MLflow tracing can run.")
 print("Use $check-connectors to verify tools and authentication with read-only checks.")
 PY
 }

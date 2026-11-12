@@ -1,4 +1,5 @@
 """Test unified agent selection and install/uninstall behavior."""
+import hashlib
 import os
 import json
 import shutil
@@ -17,6 +18,16 @@ class UnifiedInstallerTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="both-agent-kit-")
         self.addCleanup(self.temp.cleanup)
         self.project = Path(self.temp.name)
+        # Never install real plugins or contact marketplaces in installer tests.
+        self.cli_temp = tempfile.TemporaryDirectory(prefix="kit-cli-")
+        self.addCleanup(self.cli_temp.cleanup)
+        cli = Path(self.cli_temp.name) / "claude"
+        cli.write_text("#!/bin/sh\nexit 0\n")
+        cli.chmod(0o755)
+        env = patch.dict(os.environ, PATH=self.cli_temp.name + os.pathsep + os.environ["PATH"],
+                         CLAUDE_CONFIG_DIR=self.cli_temp.name)
+        env.start()
+        self.addCleanup(env.stop)
 
     def install(self, *args, success=True):
         result = subprocess.run(["bash", str(INSTALLER), *args, str(self.project)], capture_output=True, text=True)
@@ -98,7 +109,7 @@ class UnifiedInstallerTests(unittest.TestCase):
     def test_codex_conflict_leaves_claude_untouched(self):
         folder = self.project / ".codex"
         folder.mkdir()
-        (folder / "config.toml").write_text('notify = ["existing"]\n')
+        (folder / "config.toml").write_text('[mcp_servers.mysql]\ncommand = "existing"\n')
         self.install(success=False)
         self.assertFalse((self.project / ".claude").exists())
 
@@ -117,7 +128,7 @@ class UnifiedInstallerTests(unittest.TestCase):
                 "import os, shutil, sys\n"
                 "from pathlib import Path\n"
                 "url = sys.argv[2]\n"
-                "relative = url.split('/v1.1.1/', 1)[1]\n"
+                "relative = url.split('/v1.1.2/', 1)[1]\n"
                 "shutil.copyfile(Path(os.environ['KIT_SOURCE']) / relative, sys.argv[4])\n"
                 "with open(os.environ['KIT_FETCH_LOG'], 'a') as log: log.write(url + '\\n')\n"
             )
@@ -126,8 +137,8 @@ class UnifiedInstallerTests(unittest.TestCase):
             env = dict(os.environ, PATH=tmp + os.pathsep + os.environ["PATH"],
                        KIT_SOURCE=str(INSTALLER.parent), KIT_FETCH_LOG=str(log), AI_KIT_BRANCH="main")
             for selection, files in (
-                ("--codex", ["codex/config.toml", "codex/mlflow-tracing.json"]),
-                ("--claude", ["claude/settings.json", "claude/hooks/install-plugins.py", ".mcp.json"]),
+                ("--codex", ["codex/config.toml", "codex/mlflow-tracing.json", "codex/hooks.json", "codex/hooks/mlflow_stop.py"]),
+                ("--claude", ["claude/settings.json", "claude/.mcp.json"]),
             ):
                 with self.subTest(selection=selection):
                     log.write_text("")
@@ -136,20 +147,20 @@ class UnifiedInstallerTests(unittest.TestCase):
                         env=env, capture_output=True, text=True,
                     )
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                    base = "https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.1/"
+                    base = "https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.2/"
                     self.assertEqual(log.read_text().splitlines(), [base + f for f in ["skills/check-connectors/SKILL.md", *files]])
                     folder = ".codex" if selection == "--codex" else ".claude"
                     manifest = json.loads((self.project / folder / "ai-kit.json").read_text())
-                    self.assertEqual(manifest["version"], "v1.1.1")
-                    self.assertIn("v1.1.1", result.stdout)
+                    self.assertEqual(manifest["version"], "v1.1.2")
+                    self.assertIn("v1.1.2", result.stdout)
                     self.install(selection, "--uninstall")
 
     def test_version_upgrade_preserves_settings_and_uninstall_history(self):
         for unversioned in (False, True):
             with self.subTest(unversioned=unversioned), tempfile.TemporaryDirectory(prefix="release-kit-") as tmp:
                 kit = Path(tmp)
-                for relative in ("install.sh", ".mcp.json", "claude/settings.json",
-                                 "claude/hooks/install-plugins.py", "codex/config.toml", "codex/mlflow-tracing.json",
+                for relative in ("install.sh", "claude/.mcp.json", "claude/settings.json",
+                                 "codex/config.toml", "codex/mlflow-tracing.json", "codex/hooks.json", "codex/hooks/mlflow_stop.py",
                                  "skills/check-connectors/SKILL.md"):
                     target = kit / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
@@ -169,7 +180,7 @@ class UnifiedInstallerTests(unittest.TestCase):
                         manifest.pop("version")
                         record.write_text(json.dumps(manifest))
                 script = kit / "install.sh"
-                script.write_text(script.read_text().replace('KIT_VERSION="v1.1.1"', 'KIT_VERSION="v1.1.2"'))
+                script.write_text(script.read_text().replace('KIT_VERSION="v1.1.2"', 'KIT_VERSION="v1.1.3"'))
                 template = kit / "codex/config.toml"
                 template.write_text(template.read_text().replace("startup_timeout_sec = 120", "startup_timeout_sec = 150"))
                 template = kit / "claude/settings.json"
@@ -181,7 +192,7 @@ class UnifiedInstallerTests(unittest.TestCase):
                 result = subprocess.run(["bash", str(script), str(self.project)], capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 for record in records:
-                    self.assertEqual(json.loads(record.read_text())["version"], "v1.1.2")
+                    self.assertEqual(json.loads(record.read_text())["version"], "v1.1.3")
                 self.assertIn('model = "personal"', codex.read_text())
                 self.assertIn("startup_timeout_sec = 150", codex.read_text())
                 self.assertEqual(json.loads(claude.read_text())["env"]["PERSONAL_SETTING"], "keep")
@@ -207,26 +218,18 @@ class UnifiedInstallerTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(list(self.project.iterdir()), [])
 
-    def test_local_install_refuses_different_tracked_hook(self):
-        self.git("init")
+    def test_existing_user_startup_hook_is_preserved(self):
         hook = self.project / ".claude/hooks/install-plugins.py"
         hook.parent.mkdir(parents=True)
-        original = "# existing project hook\n"
-        hook.write_text(original)
-        self.git("add", ".claude/hooks/install-plugins.py")
-        self.install("--claude", success=False)
-        self.assertEqual(hook.read_text(), original)
-        self.assertFalse((self.project / ".claude/settings.local.json").exists())
-
-    def test_uninstall_preserves_preexisting_identical_hook(self):
-        hook = self.project / ".claude/hooks/install-plugins.py"
-        hook.parent.mkdir(parents=True)
-        original = (INSTALLER.parent / "claude/hooks/install-plugins.py").read_text()
-        hook.write_text(original)
+        hook.write_text("# user hook\n")
+        settings = self.project / ".claude/settings.local.json"
+        original = {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "echo user"}]}]}}
+        settings.write_text(json.dumps(original))
         self.install("--claude")
+        self.assertEqual(json.loads(settings.read_text())["hooks"], original["hooks"])
         self.install("--claude", "--uninstall")
-        self.assertTrue(hook.exists())
-        self.assertEqual(hook.read_text(), original)
+        self.assertEqual(hook.read_text(), "# user hook\n")
+        self.assertEqual(json.loads(settings.read_text()), original)
 
     def test_codex_rejects_symlinked_configuration_directory(self):
         with tempfile.TemporaryDirectory(prefix="external-codex-") as tmp:
@@ -271,28 +274,72 @@ class UnifiedInstallerTests(unittest.TestCase):
             self.assertIn("mcp add-json", calls)
             self.assertNotIn("mcp remove", calls)
 
-    def test_hook_update_restores_original_even_when_first_install_was_identical(self):
-        with tempfile.TemporaryDirectory(prefix="updated-kit-") as tmp:
-            kit = Path(tmp)
-            for relative in ("install.sh", ".mcp.json", "claude/settings.json", "claude/hooks/install-plugins.py",
-                             "skills/check-connectors/SKILL.md"):
-                target = kit / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(INSTALLER.parent / relative, target)
-            original = (kit / "claude/hooks/install-plugins.py").read_text()
-            hook = self.project / ".claude/hooks/install-plugins.py"
-            hook.parent.mkdir(parents=True)
-            hook.write_text(original)
-            def run(*args):
-                result = subprocess.run(["bash", str(kit / "install.sh"), "--claude", *args, str(self.project)], capture_output=True, text=True)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            run()
-            updated = original + "\n# Updated kit hook\n"
-            (kit / "claude/hooks/install-plugins.py").write_text(updated)
-            run()
-            self.assertEqual(hook.read_text(), updated)
-            run("--uninstall")
-            self.assertEqual(hook.read_text(), original)
+    def test_setup_installs_plugins_without_startup_hook_or_updates(self):
+        cli = Path(self.cli_temp.name) / "claude"
+        log = Path(self.cli_temp.name) / "calls.log"
+        cli.write_text(f"#!{sys.executable}\nimport sys\nwith open({str(log)!r}, 'a') as log: log.write(' '.join(sys.argv[1:]) + '\\n')\n")
+        self.install("--claude")
+        calls = log.read_text()
+        self.assertIn("plugin marketplace add anthropics/claude-plugins-official", calls)
+        self.assertIn("plugin marketplace add mlflow/mlflow --sparse .claude-plugin", calls)
+        for plugin in ("aws-core@claude-plugins-official", "aws-data-analytics@claude-plugins-official",
+                       "github@claude-plugins-official", "mlflow-tracing@mlflow-plugins"):
+            self.assertIn(f"plugin install {plugin} --scope local", calls)
+        self.assertNotIn("plugin update", calls)
+        self.assertNotIn("hooks", json.loads((self.project / ".claude/settings.local.json").read_text()))
+        self.assertFalse((self.project / ".claude/hooks").exists())
+
+    def test_missing_claude_cli_reports_setup_step(self):
+        with tempfile.TemporaryDirectory(prefix="kit-no-cli-") as tmp:
+            for command in ("bash", "python3", "git", "dirname", "mktemp", "mkdir", "cp", "rm"):
+                executable = shutil.which(command)
+                if executable:
+                    (Path(tmp) / command).symlink_to(executable)
+            with patch.dict(os.environ, PATH=tmp):
+                result = self.install("--claude")
+            self.assertIn("Claude CLI unavailable", result.stdout)
+            self.assertTrue((self.project / ".claude/ai-kit.json").exists())
+
+    def test_failed_plugin_install_reports_retry(self):
+        (Path(self.cli_temp.name) / "claude").write_text("#!/bin/sh\nexit 1\n")
+        result = self.install("--claude")
+        self.assertIn("couldn't install", result.stdout)
+        self.assertIn("claude plugin install mlflow-tracing@mlflow-plugins --scope local", result.stdout)
+        self.assertTrue((self.project / ".claude/ai-kit.json").exists())
+
+    def test_upgrade_retires_recorded_hook_and_preserves_user_hooks(self):
+        for edited in (False, True):
+            with self.subTest(edited=edited):
+                self.install("--claude")
+                record = self.project / ".claude/ai-kit.json"
+                manifest = json.loads(record.read_text())
+                settings = self.project / ".claude/settings.local.json"
+                data = json.loads(settings.read_text())
+                old = {"hooks": [{"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/install-plugins.py"'}]}
+                user = {"hooks": [{"type": "command", "command": "echo user"}]}
+                data["hooks"] = {"SessionStart": [old, user]}
+                settings.write_text(json.dumps(data))
+                rec = manifest["json"][".claude/settings.local.json"]
+                rec["items"].append([["hooks", "SessionStart"], old])
+                rec["containers"] += [["hooks"], ["hooks", "SessionStart"]]
+                hook = self.project / ".claude/hooks/install-plugins.py"
+                hook.parent.mkdir()
+                original = "# old toolkit hook\n"
+                hook.write_text(original)
+                manifest["copied"][".claude/hooks/install-plugins.py"] = {
+                    "created": True, "sha": hashlib.sha256(hook.read_bytes()).hexdigest()}
+                manifest["dirs"].append(".claude/hooks")
+                record.write_text(json.dumps(manifest))
+                if edited:
+                    hook.write_text("# user edited hook\n")
+                self.install("--claude")
+                self.assertEqual(json.loads(settings.read_text())["hooks"]["SessionStart"], [user])
+                self.assertEqual(hook.exists(), edited)
+                self.install("--claude", "--uninstall")
+                self.assertEqual(json.loads(settings.read_text())["hooks"]["SessionStart"], [user])
+                if edited:
+                    self.assertEqual(hook.read_text(), "# user edited hook\n")
+                shutil.rmtree(self.project / ".claude")
 
     def test_uninstall_without_records_is_noop(self):
         self.install("--uninstall")

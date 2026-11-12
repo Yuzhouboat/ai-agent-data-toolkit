@@ -1,5 +1,4 @@
-# Conversation tracing runs after each completed Codex CLI turn.
-notify = ["npx", "-y", "@mlflow/codex@latest", "notify-hook"]
+# Conversation tracing is configured separately in project-local hooks.json.
 
 [mcp_servers.mysql]
 command = "npx"
