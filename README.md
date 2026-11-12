@@ -1,8 +1,8 @@
 # ai-agent-data-toolkit
 
 Set up **Claude Code and Codex** in a project to work with **MySQL, AWS / Redshift,
-GitHub, and MLflow conversation tracing**. This guide uses **v1.1.2**, which fixes
-Codex tracing with a project-local `Stop` hook and installs Claude plugins during setup.
+GitHub, and MLflow conversation tracing**. This guide uses **v1.1.3**, which limits
+connector checks to MySQL, AWS / Redshift, and GitHub. MLflow remains a separate tracing mechanism.
 
 Claude templates are grouped under `claude/`, including `claude/.mcp.json` for MySQL.
 The installer merges that MCP template into the destination project's root `.mcp.json`,
@@ -25,30 +25,30 @@ From your project directory, install configuration for both agents:
 
 ```bash
 cd /path/to/your/project
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.2/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.3/install.sh)
 ```
 
 To configure only one agent, use the matching command:
 
 ```bash
 # Claude Code only
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.2/install.sh) --claude
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.3/install.sh) --claude
 
 # Codex only
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.2/install.sh) --codex
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.3/install.sh) --codex
 ```
 
 You can also append an existing project directory to any installation command:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.2/install.sh) --codex /path/to/your/project
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.3/install.sh) --codex /path/to/your/project
 ```
 
 Without a path, the target is your current Git repository's root, or your current directory
 outside Git. Configuration is local to that project. Installer-owned files are excluded
 from Git through `.git/info/exclude`; unrelated settings are preserved.
 
-Use the explicit `v1.1.2` URL above to stay on this version. A latest-release URL may
+Use the explicit `v1.1.3` URL above to stay on this version. A latest-release URL may
 install a newer version.
 
 ## 3. Set credentials
@@ -128,7 +128,7 @@ The bundled AWS configuration uses `us-east-1`; there is no installer region fla
 
 ## 5. Check connections and start working
 
-Connection checks are **manual in v1.1.2**. In your agent session, run:
+Connection checks are **manual in v1.1.3**. In your agent session, run:
 
 | Agent | Prompt |
 |---|---|
@@ -138,10 +138,10 @@ Connection checks are **manual in v1.1.2**. In your agent session, run:
 You can also ask: “Check whether this project's connector tools work.”
 
 The check uses small read-only probes and reports `PASS`, `FAIL`, or `UNTESTED`, with
-evidence and a next step for MySQL, AWS, Redshift, GitHub, and MLflow. Run it after setup
+evidence and a next step for MySQL, AWS, Redshift, and GitHub. Run it after setup
 and after changing credentials. Installation alone does not verify connectivity.
-AWS authentication does not prove Redshift SQL access, and an MLflow configuration or
-experiment-read check does not prove that a conversation trace was uploaded.
+AWS authentication does not prove Redshift SQL access. MLflow is a separate conversation
+tracing mechanism and is outside the connection-check skill's scope.
 
 Once the connections you need work, ask the agent to use them. For example:
 
@@ -153,7 +153,7 @@ Access depends on your credentials and service permissions.
 
 ## Update or uninstall
 
-Rerun the same installation command to reapply v1.1.2. To upgrade, replace `v1.1.2` in
+Rerun the same installation command to reapply v1.1.3. To upgrade, replace `v1.1.3` in
 the URL with the desired published release tag and keep the same agent selection.
 Toolkit upgrades are manual; some runtime packages use `@latest`. Claude plugin updates
 use Claude's native marketplace auto-update settings, configurable in `/plugin` under
@@ -168,7 +168,7 @@ duplicate toolkit entries. Uninstall removes the toolkit entry, restores origina
 hook files where possible, and preserves edited adapter files with a notice.
 
 If you installed v1.1.0, uninstall it with its v1.1.0 installer before installing
-v1.1.2 so its added `CLAUDE.md` / `AGENTS.md` instructions are cleaned up.
+v1.1.3 so its added `CLAUDE.md` / `AGENTS.md` instructions are cleaned up.
 
 Keep `.claude/ai-kit.json` and `.codex/ai-kit.json`: they record the installed version and
 changes needed for uninstall.
@@ -176,7 +176,7 @@ changes needed for uninstall.
 From the destination project, remove both agents' recorded toolkit configuration:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.2/install.sh) --uninstall
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.3/install.sh) --uninstall
 ```
 
 Add `--claude` or `--codex` to remove only that agent's setup, and append the project path

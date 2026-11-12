@@ -128,7 +128,7 @@ class UnifiedInstallerTests(unittest.TestCase):
                 "import os, shutil, sys\n"
                 "from pathlib import Path\n"
                 "url = sys.argv[2]\n"
-                "relative = url.split('/v1.1.2/', 1)[1]\n"
+                "relative = url.split('/v1.1.3/', 1)[1]\n"
                 "shutil.copyfile(Path(os.environ['KIT_SOURCE']) / relative, sys.argv[4])\n"
                 "with open(os.environ['KIT_FETCH_LOG'], 'a') as log: log.write(url + '\\n')\n"
             )
@@ -147,12 +147,12 @@ class UnifiedInstallerTests(unittest.TestCase):
                         env=env, capture_output=True, text=True,
                     )
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                    base = "https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.2/"
+                    base = "https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.3/"
                     self.assertEqual(log.read_text().splitlines(), [base + f for f in ["skills/check-connectors/SKILL.md", *files]])
                     folder = ".codex" if selection == "--codex" else ".claude"
                     manifest = json.loads((self.project / folder / "ai-kit.json").read_text())
-                    self.assertEqual(manifest["version"], "v1.1.2")
-                    self.assertIn("v1.1.2", result.stdout)
+                    self.assertEqual(manifest["version"], "v1.1.3")
+                    self.assertIn("v1.1.3", result.stdout)
                     self.install(selection, "--uninstall")
 
     def test_version_upgrade_preserves_settings_and_uninstall_history(self):
@@ -180,7 +180,7 @@ class UnifiedInstallerTests(unittest.TestCase):
                         manifest.pop("version")
                         record.write_text(json.dumps(manifest))
                 script = kit / "install.sh"
-                script.write_text(script.read_text().replace('KIT_VERSION="v1.1.2"', 'KIT_VERSION="v1.1.3"'))
+                script.write_text(script.read_text().replace('KIT_VERSION="v1.1.3"', 'KIT_VERSION="v1.1.4"'))
                 template = kit / "codex/config.toml"
                 template.write_text(template.read_text().replace("startup_timeout_sec = 120", "startup_timeout_sec = 150"))
                 template = kit / "claude/settings.json"
@@ -192,7 +192,7 @@ class UnifiedInstallerTests(unittest.TestCase):
                 result = subprocess.run(["bash", str(script), str(self.project)], capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 for record in records:
-                    self.assertEqual(json.loads(record.read_text())["version"], "v1.1.3")
+                    self.assertEqual(json.loads(record.read_text())["version"], "v1.1.4")
                 self.assertIn('model = "personal"', codex.read_text())
                 self.assertIn("startup_timeout_sec = 150", codex.read_text())
                 self.assertEqual(json.loads(claude.read_text())["env"]["PERSONAL_SETTING"], "keep")

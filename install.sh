@@ -4,7 +4,7 @@
 set -euo pipefail
 
 # Keep this release tag fixed: remote templates must match the installer.
-KIT_VERSION="v1.1.2"
+KIT_VERSION="v1.1.3"
 USAGE="Usage: install.sh [--claude | --codex] [--uninstall] [project-dir]"
 mode=local
 agent=both
