@@ -4,7 +4,7 @@
 set -euo pipefail
 
 # Keep this release tag fixed: remote templates must match the installer.
-KIT_VERSION="v1.1.0"
+KIT_VERSION="v1.1.1"
 USAGE="Usage: install.sh [--claude | --codex] [--uninstall] [project-dir]"
 mode=local
 agent=both
@@ -41,10 +41,10 @@ fi
 RAW_BASE="https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/$KIT_VERSION"
 KIT_FILES=(skills/check-connectors/SKILL.md)
 if [ "$agent" != codex ]; then
-    KIT_FILES+=(claude/settings.json claude/hooks/install-plugins.py claude/CLAUDE.md .mcp.json)
+    KIT_FILES+=(claude/settings.json claude/hooks/install-plugins.py .mcp.json)
 fi
 if [ "$agent" != claude ]; then
-    KIT_FILES+=(codex/config.toml codex/mlflow-tracing.json codex/AGENTS.md)
+    KIT_FILES+=(codex/config.toml codex/mlflow-tracing.json)
 fi
 SRC="$(mktemp -d)"
 trap 'rm -rf "$SRC"' EXIT
@@ -78,7 +78,6 @@ version = sys.argv[4]
 MANIFEST = ".claude/ai-kit.json"
 HOOK = ".claude/hooks/install-plugins.py"
 SKILL = ".claude/skills/check-connectors/SKILL.md"
-INSTRUCTIONS = "CLAUDE.md"
 IGNORES = [".claude/settings.local.json", ".playwright-mcp/"]
 HEADERS = {
     "gitignore": "# AI agent settings",
@@ -204,7 +203,7 @@ def merge_json(rel, new):
         print(f"           (overwrote {key})")
 
 
-def copy(rel, source, text=None):
+def copy(rel, source):
     dst = project / rel
     rec = manifest["copied"].setdefault(rel, {})
     if "orig" not in rec and "created" not in rec:
@@ -213,10 +212,7 @@ def copy(rel, source, text=None):
         else:
             rec["created"] = True
     dst.parent.mkdir(parents=True, exist_ok=True)
-    if text is None:
-        shutil.copy2(src / source, dst)
-    else:
-        dst.write_text(text)
+    shutil.copy2(src / source, dst)
     rec["sha"] = sha(dst)
     print(f"  copied   {rel}")
 
@@ -272,26 +268,6 @@ def install():
         sys.exit(f"{SKILL} was edited since install; restore it before updating (uninstall preserves it).")
     if skill.exists() and (tracked(SKILL) or not owned) and skill.read_text() != skill_text:
         sys.exit(f"Existing {SKILL} differs; move it aside before installing.")
-    instructions = project / INSTRUCTIONS
-    if instructions.is_symlink():
-        sys.exit(f"Refusing to modify symlinked instructions: {instructions}")
-    instruction_text = (src / "claude/CLAUDE.md").read_text()
-    instruction_record = manifest["copied"].get(INSTRUCTIONS)
-    if instruction_record and not tracked(INSTRUCTIONS):
-        if not instructions.exists() or sha(instructions) != instruction_record["sha"]:
-            sys.exit("CLAUDE.md edited since install; restore it before updating (uninstall preserves it).")
-    original = instruction_record.get("orig", "") if instruction_record else (instructions.read_text() if instructions.exists() else "")
-    # Creating CLAUDE.md can otherwise hide project guidance Claude read from AGENTS.md.
-    import_agents = instruction_record.get("imports_agents", False) if instruction_record else False
-    if not instruction_record and not instructions.exists() and (project / "AGENTS.md").is_file():
-        try:
-            codex_record = json.loads((project / ".codex/ai-kit.json").read_text())
-        except (OSError, ValueError):
-            codex_record = {}
-        import_agents = not ("instructions_set" in codex_record and codex_record.get("instructions_original") is None)
-    if import_agents:
-        original = "@AGENTS.md\n\n" + original
-    merged_instructions = original + ("\n\n" if original else "") + instruction_text
 
     note_dirs(".claude", ".claude/hooks", ".claude/skills", ".claude/skills/check-connectors")
     settings = load(src / "claude/settings.json")
@@ -301,11 +277,6 @@ def install():
         copy(HOOK, "claude/hooks/install-plugins.py")
     if not tracked(SKILL):
         copy(SKILL, "skills/check-connectors/SKILL.md")
-    if tracked(INSTRUCTIONS):
-        print("  kept tracked CLAUDE.md. Add this instruction manually to request session checks:\n" + instruction_text)
-    else:
-        copy(INSTRUCTIONS, "claude/CLAUDE.md", merged_instructions)
-        manifest["copied"][INSTRUCTIONS]["imports_agents"] = import_agents
 
     if tracked(".mcp.json"):
         # The repo's own .mcp.json can't change without showing in git status,
@@ -337,7 +308,7 @@ def install():
     print("Next: set the credentials listed in the kit's README (MySQL, AWS, GitHub, MLflow),")
     print(f"then run `claude` in {project} — the SessionStart hook installs the plugins;")
     print("/reload-plugins loads them.")
-    print("CLAUDE.md requests a connector check on the first turn; /check-connectors reruns it manually.")
+    print("Then use /check-connectors to verify tools and authentication with read-only checks.")
 
 
 # --- uninstall -----------------------------------------------------------------
@@ -435,12 +406,6 @@ def remove_lines(kind, rec):
 def uninstall():
     if not (project / MANIFEST).exists():
         sys.exit(f"No {MANIFEST} in {project} — nothing recorded to uninstall.")
-    if INSTRUCTIONS in manifest["copied"]:
-        if (project / INSTRUCTIONS).is_symlink():
-            sys.exit(f"Refusing to modify symlinked instructions: {project / INSTRUCTIONS}")
-        if tracked(INSTRUCTIONS):
-            manifest["copied"].pop(INSTRUCTIONS)
-            print("Kept CLAUDE.md: now tracked by Git.")
     print(f"Uninstalling AI settings ({manifest['mode']} mode) from {project}\n")
     kept = []
     scope = "project" if manifest["mode"] == "shared" else "local"
@@ -500,7 +465,6 @@ config = folder / "config.toml"
 tracing = folder / "mlflow-tracing.json"
 record = folder / "ai-kit.json"
 skill = project / ".agents/skills/check-connectors/SKILL.md"
-instructions = project / "AGENTS.md"
 for path in (folder, config, tracing, record):
     if path.is_symlink():
         sys.exit(f"Refusing to modify symlinked Codex path: {path}")
@@ -526,8 +490,6 @@ def block(name, text):
 
 
 manifest = json.loads(read(record) or "{}")
-if (mode != "uninstall" or "instructions_set" in manifest) and instructions.is_symlink():
-    sys.exit(f"Refusing to modify symlinked instructions: {instructions}")
 if mode != "uninstall" or "skill_set" in manifest:
     for path in (project / ".agents", project / ".agents/skills", skill.parent, skill):
         if path.is_symlink():
@@ -543,13 +505,6 @@ for part in manifest.get("blocks", []):
 if mode == "uninstall":
     if not manifest:
         sys.exit("No .codex/ai-kit.json found; nothing recorded to uninstall.")
-    if "instructions_set" in manifest and instructions.exists():
-        if tracked("AGENTS.md") or read(instructions) != manifest["instructions_set"]:
-            print("Kept AGENTS.md: tracked or edited since install.")
-        elif manifest["instructions_original"] is None:
-            instructions.unlink()
-        else:
-            instructions.write_text(manifest["instructions_original"])
     if config.exists():
         if not base and manifest["config_created"]:
             config.unlink()
@@ -617,11 +572,6 @@ if not manifest and tracing.exists() and read(tracing) != trace_text:
     sys.exit("Existing .codex/mlflow-tracing.json differs; move it aside before installing.")
 if manifest and read(tracing) != manifest["tracing_set"]:
     sys.exit("MLflow config edited since install; restore it before updating (uninstall preserves it).")
-instruction_text = read(src / "AGENTS.md")
-if "instructions_set" in manifest and not tracked("AGENTS.md") and read(instructions) != manifest["instructions_set"]:
-    sys.exit("AGENTS.md edited since install; restore it before updating (uninstall preserves it).")
-original_instructions = manifest.get("instructions_original", read(instructions) if instructions.exists() else None)
-merged_instructions = (original_instructions or "") + ("\n\n" if original_instructions else "") + instruction_text
 
 # The notify key must precede all TOML tables. Server tables go at the end.
 root, servers = kit_text.split("[mcp_servers.", 1)
@@ -649,11 +599,6 @@ skill.parent.mkdir(parents=True, exist_ok=True)
 skill.write_text(skill_text)
 config.write_text(result)
 tracing.write_text(trace_text)
-if tracked("AGENTS.md"):
-    print("Kept tracked AGENTS.md. Add this instruction manually to request session checks:\n" + instruction_text)
-else:
-    instructions.write_text(merged_instructions)
-    manifest.update(instructions_original=original_instructions, instructions_set=merged_instructions)
 if in_git:
     prefix_path = git("rev-parse", "--show-prefix").stdout.strip()
     exclude = Path(git("rev-parse", "--path-format=absolute", "--git-path", "info/exclude").stdout.strip())
@@ -661,8 +606,6 @@ if in_git:
     # A leading newline also handles exclude files with no final newline.
     lines = [f"/{prefix_path}.codex/{name}" for name in ("config.toml", "mlflow-tracing.json", "ai-kit.json")]
     lines.append(f"/{prefix_path}.agents/skills/check-connectors/SKILL.md")
-    if "instructions_set" in manifest:
-        lines.append(f"/{prefix_path}AGENTS.md")
     for line in lines:
         if line not in text.splitlines():
             addition = "\n" + line + "\n"
@@ -674,7 +617,7 @@ record.write_text(json.dumps(manifest, indent=2) + "\n")
 print(f"Installed local Codex kit {version} into {project}.")
 print("Set MySQL, AWS, GitHub and MLflow credentials as described in the README.")
 print("Then start codex, trust the project, and check /mcp. No services were contacted by this installer.")
-print("AGENTS.md requests a connector check on the first turn; $check-connectors reruns it manually.")
+print("Use $check-connectors to verify tools and authentication with read-only checks.")
 PY
 }
 

@@ -1,286 +1,163 @@
 # ai-agent-data-toolkit
 
-A reusable setup for Claude Code and Codex to work with **MySQL, AWS / Redshift, GitHub,
-and MLflow tracing** through MCP servers and agent integrations.
+Set up **Claude Code and Codex** in a project to work with **MySQL, AWS / Redshift,
+GitHub, and MLflow conversation tracing**. This guide uses **v1.1.1**, which restores the v1.0.0 behavior.
 
-## Install into a work directory
+## 1. Prerequisites
 
-Run the installer from the project where you want to use the agents. It configures
-**both agents locally by default**. For Codex, installation requires **Python 3.11+**;
-Claude-only installation requires Python 3. Running the integrations also requires the selected
-agent, **Node.js 18+** (`npx`), and **uv** (`uvx`).
+Install the agent you want to use, plus:
 
-Current release: [v1.1.0](https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/tag/v1.1.0).
-Both installation methods below are published and available.
+- **Python 3.11+** for Codex or both agents; Python 3 for Claude-only installation.
+- **Node.js 18+**, including `npx`.
+- **uv**, including `uvx`.
+- **curl** and **Bash** to run the installation commands below.
 
-Install the latest published release:
+Have credentials ready for the services you want to use.
 
-```bash
-bash <(curl -fsSL https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/latest/download/install.sh)
-```
+## 2. Install in your project
 
-To install a specific version, use its release tag. For example, to install `v1.1.0`:
+From your project directory, install configuration for both agents:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.0/install.sh)
+cd /path/to/your/project
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.1/install.sh)
 ```
 
-The latest-release command downloads the `install.sh` asset attached to the latest published
-GitHub release. Both commands download templates from the selected installer's fixed release
-tag. Pushing changes to `main` does not publish a release or change an existing version.
-
-Generated files are hidden through the destination repository's `.git/info/exclude`, so there
-is nothing to commit. There is no `--local` flag or shared installation mode.
-Existing tracked settings are preserved; conflicting destinations cause installation to stop.
-
-Select one agent when needed:
+To configure only one agent, use the matching command:
 
 ```bash
-bash <(curl -fsSL https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/latest/download/install.sh) --claude
-bash <(curl -fsSL https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/latest/download/install.sh) --codex
+# Claude Code only
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.1/install.sh) --claude
+
+# Codex only
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.1/install.sh) --codex
 ```
 
-An optional project path selects another destination:
+You can also append an existing project directory to any installation command:
 
 ```bash
-bash <(curl -fsSL https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/latest/download/install.sh) /path/to/project
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.1/install.sh) --codex /path/to/your/project
 ```
 
-Append `[--claude | --codex] [--uninstall] [project-dir]` to either curl command as needed.
-The target defaults to the Git repo root you're in, or the current directory outside Git.
-Nested project directories and non-Git directories are supported. Outside Git the installer
-writes the same local configuration, with no Git exclusions to add.
+Without a path, the target is your current Git repository's root, or your current directory
+outside Git. Configuration is local to that project. Installer-owned files are excluded
+from Git through `.git/info/exclude`; unrelated settings are preserved.
 
-After installation, set credentials, start the selected agent in the destination project,
-and send your first message. Project instructions request the connector check described below. Branch overrides are not supported.
+Use the explicit `v1.1.1` URL above to stay on this version. A latest-release URL may
+install a newer version.
 
-## What's included
+## 3. Set credentials
 
-Templates live in the visible `claude/` and `codex/` source folders. The installer writes
-agent configuration into `.claude/` and `.codex/` in the destination project. The shared
-connector-check skill lives in `skills/` here and is installed into each agent's skill directory.
-
-| Source file | Purpose |
-|---|---|
-| `install.sh` | One local-only installer for both agents, with selection and uninstall arguments |
-| `claude/CLAUDE.md` | First-turn connector-check instruction appended to untracked project `CLAUDE.md` |
-| `claude/settings.json` | Claude plugin, tracing and startup-hook template, merged into the destination's `.claude/settings.local.json` |
-| `claude/hooks/install-plugins.py` | Installs missing Claude plugins and updates installed plugins at startup |
-| `.mcp.json` | MySQL MCP template for Claude |
-| `codex/AGENTS.md` | First-turn connector-check instruction appended to untracked project `AGENTS.md` |
-| `codex/config.toml` | Codex MCP connections and MLflow notification-hook template |
-| `codex/mlflow-tracing.json` | MLflow tracking URI and experiment template for Codex |
-| `skills/check-connectors/SKILL.md` | Shared read-only connector-check prompt installed for each selected agent |
-| `tests/` | Installer regression tests using disposable project directories |
-
-Both agents connect to the same MySQL database and use the same MLflow destination:
-`https://mlflow.yliumono.click`, experiment `yliu` (ID `2`). AWS and GitHub access depend on the
-permissions of your credentials. The installer does not store credentials in the templates.
-
-## Credentials
-
-Export credentials in the terminal where you will launch the agent:
+Replace the placeholders and export these variables in the terminal where you will launch
+the agent:
 
 ```bash
-export MYSQL_HOST=localhost
-export MYSQL_PORT=3306
-export MYSQL_DATABASE=...
-export MYSQL_USER=...
-export MYSQL_PASSWORD=...
-export GITHUB_PERSONAL_ACCESS_TOKEN=...
-export MLFLOW_TRACKING_USERNAME=...
-export MLFLOW_TRACKING_PASSWORD=...
-# Optional: select a configured AWS profile instead of the default credential chain.
-export AWS_PROFILE=...
+export MYSQL_HOST='localhost'
+export MYSQL_PORT='3306'
+export MYSQL_DATABASE='your_database'
+export MYSQL_USER='your_user'
+export MYSQL_PASSWORD='your_password'
+export GITHUB_PERSONAL_ACCESS_TOKEN='your_github_token'
+export MLFLOW_TRACKING_USERNAME='your_mlflow_username'
+export MLFLOW_TRACKING_PASSWORD='your_mlflow_password'
+
+# Optional: select an existing AWS profile.
+export AWS_PROFILE='your_profile'
 ```
 
-AWS credentials can also come from `aws login` or the standard AWS credential environment
-variables. Use a GitHub token with access to the repositories you need.
+AWS uses your existing credential chain, including configured profiles or AWS credential
+environment variables. Use credentials with permission for the AWS resources and GitHub
+repositories you need.
 
-The installer does not prompt for credentials, load `.env` files or a private credentials
-file, or configure a secret manager. Missing credentials do not block installation; the
-agent may report errors later when tools start or connect. After changing exported variables,
-restart the agent from that terminal so it inherits the new values.
+The installer does not load `.env` files or prompt for credentials. Restart the agent from
+this terminal after changing variables. Keep credentials out of Git.
 
-For Claude, you may put the MLflow username and password in the `env` object of
-`.claude/settings.local.json` instead. Codex does not read Claude settings, so export the
-credentials when using Codex. Do not commit credentials.
+Both agents default to MLflow at `https://mlflow.yliumono.click`, experiment `yliu` (ID `2`).
+Conversation tracing is enabled by the installed configuration. For a different destination:
 
-## Check connections
+- **Claude Code:** change `MLFLOW_TRACKING_URI`, `MLFLOW_EXPERIMENT_ID`, and
+  `MLFLOW_EXPERIMENT_NAME` in the `env` object of `.claude/settings.local.json`.
+- **Codex:** export `MLFLOW_TRACKING_URI` and `MLFLOW_EXPERIMENT_ID` before launching.
 
-From **v1.1.0**, the installer appends a short connector-check instruction to the destination's
-`CLAUDE.md` for Claude and `AGENTS.md` for Codex. Existing untracked content is preserved;
-reinstalling does not duplicate the instruction. If a file is tracked by Git, the installer
-leaves it unchanged and prints the instruction for you to add manually.
+## 4. Start your agent
 
-Start a new session in the destination project and send your first message. The instruction
-asks the agent to use the existing skill, show its results, and continue your task. It runs
-once per session unless you request another check or explicitly ask to skip it. This is
-Markdown guidance followed by the agent, not an enforced startup hook or background process;
-opening an idle session alone does not run the checks. Ensure the instruction is in a file
-your agent loads (for example, a Codex `AGENTS.override.md` can take precedence over `AGENTS.md`).
+Run your chosen agent from the project directory where you installed the toolkit.
 
-You can still run the check manually at any time:
+### Claude Code
+
+```bash
+claude
+```
+
+On first startup, the toolkit's hook installs the enabled AWS, GitHub, and MLflow plugins.
+Run `/reload-plugins` or restart Claude to load them. Approve the MySQL MCP server when
+prompted. First startup may take longer while dependencies download.
+
+### Codex
+
+```bash
+codex
+```
+
+Trust the project when prompted so its configuration can load. Use `/mcp` to inspect the
+MySQL, AWS, and GitHub servers. MLflow runs as a tracing hook after completed CLI turns.
+The bundled AWS configuration uses `us-east-1`; there is no installer region flag.
+
+## 5. Check connections and start working
+
+Connection checks are **manual in v1.1.1**. In your agent session, run:
 
 | Agent | Prompt |
 |---|---|
 | Claude Code | `/check-connectors` |
 | Codex | `$check-connectors` |
 
-You can also ask either agent: "Check whether this project's connector tools work."
-The installer places the shared skill in `.claude/skills/check-connectors/SKILL.md` for
-Claude and `.agents/skills/check-connectors/SKILL.md` for Codex. Both are local to the
-destination project and excluded from Git when the installer owns them.
+You can also ask: “Check whether this project's connector tools work.”
 
-The prompt checks MySQL, AWS, Redshift, GitHub, and MLflow using available tools and small
-read-only operations. It reports `PASS`, `FAIL`, or `UNTESTED` with evidence and a next step,
-without showing credential values. Missing tools and authentication errors are reported
-separately. AWS identity does not prove Redshift database access; MLflow configuration or
-experiment read access does not prove the tracing hook uploaded a trace. The check does
-not install packages, change settings, or create test data.
+The check uses small read-only probes and reports `PASS`, `FAIL`, or `UNTESTED`, with
+evidence and a next step for MySQL, AWS, Redshift, GitHub, and MLflow. Run it after setup
+and after changing credentials. Installation alone does not verify connectivity.
+AWS authentication does not prove Redshift SQL access, and an MLflow configuration or
+experiment-read check does not prove that a conversation trace was uploaded.
 
-Installation itself does not check credentials or contact these services. Set credentials before
-starting the session, and run the manual prompt again after changing them. It verifies the operations
-actually attempted, rather than every tool or permission the integrations might expose.
+Once the connections you need work, ask the agent to use them. For example:
 
-## Claude behavior
+- “List the tables in my MySQL database and describe their columns.”
+- “List the Redshift workgroups I can access in us-east-1.”
+- “Summarize the open issues in owner/repository.”
 
-The installer merges the Claude template into **`.claude/settings.local.json`**, preserving
-unrelated settings and listing overlapping values it updates. The startup hook installs plugins
-at local scope for settings enabled in that file. The kit enables `aws-core`, `aws-data-analytics`,
-`github`, and `mlflow-tracing`, plus their marketplace configuration.
+Access depends on your credentials and service permissions.
 
-If `.mcp.json` is untracked, the installer merges the MySQL server into it and hides it from Git.
-If the project already tracks `.mcp.json`, the installer registers MySQL at local scope using
-`claude mcp add-json --scope local`, preserving the tracked file. Existing local registrations
-are not removed unless they belong to this kit. If the CLI rejects an addition, the installer
-prints a manual setup warning.
+## Update or uninstall
 
-Tracked `.claude/settings.local.json`, or a different tracked plugin hook at the same path,
-causes the Claude install to stop. A matching tracked hook can be reused without modification.
-The kit does not edit the project's shared `.claude/settings.json`.
+Rerun the same installation command to reapply v1.1.1. To upgrade, replace `v1.1.1` in
+the URL with the desired published release tag and keep the same agent selection.
+Toolkit upgrades are manual; some runtime packages use `@latest`, and Claude's startup
+hook updates its enabled plugins.
 
-Run `claude` in the destination project. On the first start the hook installs the plugins;
-run `/reload-plugins` or restart to load them. Approve the MySQL MCP server when prompted.
-MLflow tracing requires a reachable tracking server and valid credentials.
+If you installed v1.1.0, uninstall it with its v1.1.0 installer before installing
+v1.1.1 so its added `CLAUDE.md` / `AGENTS.md` instructions are cleaned up.
 
-## Codex behavior
+Keep `.claude/ai-kit.json` and `.codex/ai-kit.json`: they record the installed version and
+changes needed for uninstall.
 
-The installer adds marked blocks to **`.codex/config.toml`** and writes
-**`.codex/mlflow-tracing.json`**. Unrelated settings and comments are preserved. Codex loads
-project configuration for trusted projects; start `codex` in the destination, trust the project
-when prompted, and use `/mcp` to check the three servers.
-
-| Integration | Codex implementation |
-|---|---|
-| MySQL | Same Toolbox MCP command as Claude, with `MYSQL_*` variables forwarded |
-| AWS / Redshift | AWS managed MCP server through `mcp-proxy-for-aws@1.6.3`, using local AWS credentials |
-| GitHub | GitHub's hosted MCP server, with a token read from `GITHUB_PERSONAL_ACCESS_TOKEN` |
-| MLflow | Official `@mlflow/codex` notification hook, recording conversation traces after completed CLI turns |
-
-Codex installation stops before writing if an existing `notify` hook or an MCP server named
-`mysql`, `aws-mcp`, or `github` conflicts. Resolve the conflicting entry manually before installing.
-It also refuses tracked `.codex` destination files and symlinked Codex configuration paths, so it
-cannot silently change shared or global configuration. Existing unrelated untracked settings can
-be extended locally.
-
-The versioned Codex template sets the AWS endpoint and default operation region to `us-east-1`.
-The installer has no region-selection flag. `AWS_REGION` alone does not select the managed
-server's operation region. Your IAM permissions must allow the MCP server and downstream
-AWS operations. Re-running a published installer reapplies its templates; it does not use
-edits made to this repository's templates on `main`.
-
-To override the Codex MLflow destination without editing templates, export `MLFLOW_TRACKING_URI`
-and `MLFLOW_EXPERIMENT_ID`. The repo does not verify your server version or authentication setup.
-
-## Updates and uninstall
-
-To upgrade, run the curl command for the newer release tag with the same agent selection.
-Alternatively, rerun the latest-release command to install the current published release:
+From the destination project, remove both agents' recorded toolkit configuration:
 
 ```bash
-bash <(curl -fsSL https://github.com/Yuzhouboat/ai-agent-data-toolkit/releases/latest/download/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.1/install.sh) --uninstall
 ```
 
-Re-running the same release reapplies that version; upgrades are never automatic. Existing
-unversioned local installs can be upgraded with the same command. Each agent records the installed
-release in the `version` field of its `ai-kit.json` file. Unrelated settings are preserved.
+Add `--claude` or `--codex` to remove only that agent's setup, and append the project path
+if running from another directory. Use the installer matching your recorded installed version.
+Uninstall restores overwritten settings where possible and preserves edited files with a notice.
 
-Release tags are fixed once published. Installer and template versions are pinned; runtime
-dependencies that use `@latest` can still change independently. Claude's startup
-hook updates its enabled plugins. MySQL and the MLflow Codex package use `@latest`; Claude's AWS
-plugins manage their MCP dependencies. The Codex AWS proxy is pinned and updated explicitly in
-the template. First startup may take longer while packages are downloaded.
+## If something fails
 
-Each agent records its changes in its own `.claude/ai-kit.json` or `.codex/ai-kit.json`. Keep these
-records for uninstall. The Git exclusions and local-only plugin/server registrations are part of
-the recorded setup. The installer does not install packages globally or commit files.
-
-Uninstall using the installer for the version recorded in your agent's `ai-kit.json`.
-For `v1.1.0`:
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.0/install.sh) --uninstall
-```
-
-Add `--claude` or `--codex` to uninstall only one agent. Missing agent installs are skipped.
-Uninstall removes recorded configuration, restores overwritten values where possible, removes
-owned local registrations and plugins, and drops the exclusions it added. User edits are
-preserved and reported. Codex's marked configuration blocks must remain intact for an update or
-uninstall; edited blocks must be restored first. Edits outside those blocks are preserved.
-The added project instructions are recorded with their selected agent. Uninstall restores
-preexisting untracked instruction files or removes files the kit created, provided they are
-unchanged. Edited files and files later tracked by Git are kept. Restore edited installed
-instruction files before updating; the installer refuses to overwrite them.
-
-Connector skills are updated and uninstalled with their selected agent. A different existing
-skill at the destination blocks installation. Restore an edited installed skill before updating;
-uninstall preserves edited skills. Unrelated skills and preexisting matching skill files are kept.
-Codex refuses a tracked `.agents/skills/check-connectors/SKILL.md`, even if its content matches.
-Claude can reuse a matching tracked connector skill without changing it.
-
-If you used an older **shared installation**, uninstall it first with the selected agent's
-`--uninstall` command, then rerun the installer. Legacy manifests are still supported for removal;
-new installations are always local. You must commit the removal of previously tracked shared
-files yourself if you want that removal reflected in Git.
-
-If installation stops with an error, fix the reported issue and rerun. Changes to the other
-agent may already have been applied. Local exclusions cannot hide files that Git already tracks,
-which is why conflicting tracked destinations are refused.
-
-## Verification and references
-
-Run installer checks without contacting any service:
-
-```bash
-python3 -m unittest discover -s tests -v
-```
-
-Tests cover agent selection, local Git visibility, update/uninstall, existing settings and hooks,
-conflicts, symlinks, project instruction preservation, connector skill lifecycle, release-pinned downloads, versioned and
-unversioned upgrades, and download failures. Live authentication must be verified with
-your credentials using the installed connector-check prompt.
-
-To publish a release:
-
-1. Set `KIT_VERSION` in `install.sh`, the fixed-version URLs in this README, and the version
-   expectations in `tests/test_installer.py` to the same tag. Update the current release link above.
-2. Run the installer checks, commit the tested files, and push the commit.
-3. Create and push a Git tag matching `KIT_VERSION` on that commit.
-4. Publish a GitHub release for that tag and attach that commit's `install.sh` as a release
-   asset named exactly `install.sh`. Mark the release as latest when it is ready for that URL.
-5. Verify both download URLs before announcing the release. The asset must match the tagged
-   script, whose embedded version selects the matching templates.
-
-Use a new version for subsequent changes; keep published tags and assets fixed.
-The latest-release download follows [GitHub's release asset URL format](https://docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
-
-References: [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp),
-[MLflow Codex tracing](https://www.mlflow.org/docs/latest/genai/tracing/integrations/listing/codex/),
-[AWS MCP proxy configuration](https://github.com/awslabs/mcp/blob/main/src/aws-api-mcp-server/MIGRATION.md),
-and [GitHub MCP server](https://github.com/github/github-mcp-server).
-Skill locations and invocation follow the [Codex skills documentation](https://learn.chatgpt.com/docs/build-skills)
-and [Claude Code skills documentation](https://code.claude.com/docs/en/skills).
-
-Project instruction loading follows the [Codex AGENTS.md documentation](https://learn.chatgpt.com/docs/agent-configuration/agents-md)
-and [Claude Code memory documentation](https://code.claude.com/docs/en/memory).
+- **Missing tools or authentication errors:** check prerequisites and credentials, restart
+  the agent from the terminal containing your exports, then rerun the connection check.
+- **Installation reports conflicting settings or tracked files:** resolve the reported
+  conflict and rerun. One agent may already be installed even if the other fails.
+- **An update reports edited managed files:** restore the toolkit's marked Codex config
+  blocks or edited connector skill before updating. Preserve your customizations separately.
+- **An older shared installation is detected:** uninstall it with its installer before
+  installing this local version.
