@@ -1,43 +1,10 @@
 # ai-agent-data-toolkit
 
 Set up **Claude Code and Codex** in a project to work with **MySQL, AWS / Redshift,
-GitHub, Atlassian (Jira / Confluence), and MLflow conversation tracing**.
-This guide uses **v1.1.4**, which adds Atlassian browser login.
-MLflow remains a separate tracing mechanism.
+GitHub, and MLflow conversation tracing**. This guide uses **v1.1.3**, which limits
+connector checks to MySQL, AWS / Redshift, and GitHub. MLflow remains a separate tracing mechanism.
 
-## Atlassian setup
-
-To install from a local checkout, run its installer against your project:
-
-```bash
-bash /path/to/ai-agent-data-toolkit/install.sh /path/to/your/project
-```
-
-Append `--claude` or `--codex` before the project path to configure one agent.
-The commands in section 2 install the published release, including Atlassian support.
-
-Both agents connect directly to the official
-[Atlassian MCP server](https://atlassian.github.io/atlassian-mcp-server/)
-at `https://mcp.atlassian.com/v2/mcp`. This requires an Atlassian Cloud site;
-self-hosted Jira Data Center needs a different integration.
-
-Both templates use manual browser login (OAuth). No Atlassian API-token
-environment variables are required.
-
-1. Install the configuration into your destination project.
-2. For Codex, trust the destination project, then run `codex mcp login atlassian`
-   from that project directory and complete the browser sign-in and authorization.
-3. For Claude Code, launch Claude in the destination project, open `/mcp`, select
-   `atlassian`, and complete its authentication flow in your browser.
-
-Access follows your signed-in account's permissions and organization policies.
-See the [official setup guide](https://atlassian.github.io/atlassian-mcp-server/).
-The installer only adds configuration; it does not sign you in or verify Jira access.
-After login, run the connection check or ask: “Read and summarize Jira issue PROJ-123.”
-Reinstall and uninstall use the same tracked configuration mechanism as the other
-MCP servers. OAuth credentials are managed by the agent client, outside installer records.
-
-Claude templates are grouped under `claude/`, including `claude/.mcp.json` for MySQL and Atlassian.
+Claude templates are grouped under `claude/`, including `claude/.mcp.json` for MySQL.
 The installer merges that MCP template into the destination project's root `.mcp.json`,
 where Claude reads project MCP configuration. Codex templates live under `codex/`.
 
@@ -58,30 +25,30 @@ From your project directory, install configuration for both agents:
 
 ```bash
 cd /path/to/your/project
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.4/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.3/install.sh)
 ```
 
 To configure only one agent, use the matching command:
 
 ```bash
 # Claude Code only
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.4/install.sh) --claude
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.3/install.sh) --claude
 
 # Codex only
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.4/install.sh) --codex
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.3/install.sh) --codex
 ```
 
 You can also append an existing project directory to any installation command:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.4/install.sh) --codex /path/to/your/project
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.3/install.sh) --codex /path/to/your/project
 ```
 
 Without a path, the target is your current Git repository's root, or your current directory
 outside Git. Configuration is local to that project. Installer-owned files are excluded
 from Git through `.git/info/exclude`; unrelated settings are preserved.
 
-Use the explicit `v1.1.4` URL above to stay on this version. A latest-release URL may
+Use the explicit `v1.1.3` URL above to stay on this version. A latest-release URL may
 install a newer version.
 
 ## 3. Set credentials
@@ -132,8 +99,7 @@ claude
 The installer installs the enabled AWS, GitHub, and MLflow plugins at local scope.
 If Claude was already running, use `/reload-plugins` or restart it. If plugin installation
 fails or the Claude CLI is unavailable, resolve the reported problem and rerun the installer.
-Approve the MySQL and Atlassian MCP servers when prompted. Open `/mcp`, select
-`atlassian`, and complete browser authentication.
+Approve the MySQL MCP server when prompted.
 
 ### Codex
 
@@ -142,9 +108,7 @@ codex
 ```
 
 Trust the project when prompted so its configuration can load. Use `/mcp` to inspect the
-MySQL, AWS, GitHub, and Atlassian servers. From that project directory, run
-`codex mcp login atlassian` and complete browser authentication, then restart Codex.
-Use `/hooks`
+MySQL, AWS, and GitHub servers. Use `/hooks`
 or **Review hooks** in the desktop app to review and trust the project-local `Stop`
 hook. Project trust and hook trust are separate; automatic tracing is skipped until
 the exact hook definition is trusted.
@@ -164,7 +128,7 @@ The bundled AWS configuration uses `us-east-1`; there is no installer region fla
 
 ## 5. Check connections and start working
 
-Connection checks are **manual in v1.1.4**. In your agent session, run:
+Connection checks are **manual in v1.1.3**. In your agent session, run:
 
 | Agent | Prompt |
 |---|---|
@@ -174,7 +138,7 @@ Connection checks are **manual in v1.1.4**. In your agent session, run:
 You can also ask: “Check whether this project's connector tools work.”
 
 The check uses small read-only probes and reports `PASS`, `FAIL`, or `UNTESTED`, with
-evidence and a next step for MySQL, AWS, Redshift, GitHub, and Atlassian. Run it after setup
+evidence and a next step for MySQL, AWS, Redshift, and GitHub. Run it after setup
 and after changing credentials. Installation alone does not verify connectivity.
 AWS authentication does not prove Redshift SQL access. MLflow is a separate conversation
 tracing mechanism and is outside the connection-check skill's scope.
@@ -189,7 +153,7 @@ Access depends on your credentials and service permissions.
 
 ## Update or uninstall
 
-Rerun the same installation command to reapply v1.1.4. To upgrade, replace `v1.1.4` in
+Rerun the same installation command to reapply v1.1.3. To upgrade, replace `v1.1.3` in
 the URL with the desired published release tag and keep the same agent selection.
 Toolkit upgrades are manual; some runtime packages use `@latest`. Claude plugin updates
 use Claude's native marketplace auto-update settings, configurable in `/plugin` under
@@ -204,7 +168,7 @@ duplicate toolkit entries. Uninstall removes the toolkit entry, restores origina
 hook files where possible, and preserves edited adapter files with a notice.
 
 If you installed v1.1.0, uninstall it with its v1.1.0 installer before installing
-v1.1.4 so its added `CLAUDE.md` / `AGENTS.md` instructions are cleaned up.
+v1.1.3 so its added `CLAUDE.md` / `AGENTS.md` instructions are cleaned up.
 
 Keep `.claude/ai-kit.json` and `.codex/ai-kit.json`: they record the installed version and
 changes needed for uninstall.
@@ -212,7 +176,7 @@ changes needed for uninstall.
 From the destination project, remove both agents' recorded toolkit configuration:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.4/install.sh) --uninstall
+bash <(curl -fsSL https://raw.githubusercontent.com/Yuzhouboat/ai-agent-data-toolkit/v1.1.3/install.sh) --uninstall
 ```
 
 Add `--claude` or `--codex` to remove only that agent's setup, and append the project path

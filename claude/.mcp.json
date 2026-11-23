@@ -1,9 +1,5 @@
 {
   "mcpServers": {
-    "atlassian": {
-      "type": "http",
-      "url": "https://mcp.atlassian.com/v2/mcp"
-    },
     "mysql": {
       "command": "npx",
       "args": ["-y", "@toolbox-sdk/server@latest", "--prebuilt", "mysql", "--stdio"],
