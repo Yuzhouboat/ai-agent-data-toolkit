@@ -1,58 +1,21 @@
 # ai-agent-data-toolkit
 
-Ready-to-use project configuration that connects **Claude Code** and **Codex** to
-**MySQL, AWS (incl. Redshift), GitHub, and Atlassian (Jira / Confluence)**, with
-every conversation traced to **MLflow**.
+Project config that connects **Claude Code** and **Codex** to **MySQL, AWS / Redshift,
+GitHub and Atlassian**, with every conversation traced to **MLflow**.
 
-There is no installer: the configuration lives in this repo. Clone it (or copy the
-files below into your own project) and launch the agent from the project root.
+## Install
 
-## What's included
+Open your coding agent **in your project folder** and say:
 
-| Path | Purpose |
-|---|---|
-| `.mcp.json` | Claude Code MCP servers: MySQL, AWS, GitHub, Atlassian |
-| `.claude/settings.json` | Enables those servers, sets the MLflow destination, adds the MLflow `Stop` hook |
-| `.codex/config.toml` | Codex MCP servers (same four) |
-| `.codex/hooks.json` | Codex `Stop` hook that runs the MLflow adapter |
-| `.codex/hooks/mlflow_stop.py` | Adapter: turns a Codex `Stop` event into an `@mlflow/codex` trace |
-| `.codex/mlflow-tracing.json` | Codex MLflow destination (tracking URI + experiment ID) |
-
-### MCP servers
-
-| Server | Transport | Auth |
-|---|---|---|
-| `mysql` | `npx @toolbox-sdk/server --prebuilt mysql` | `MYSQL_*` env vars |
-| `aws-mcp` | `uvx mcp-proxy-for-aws@1.6.3` → `aws-mcp.us-east-1.api.aws` | Your AWS credential chain (SigV4) |
-| `github` | HTTP, `api.githubcopilot.com/mcp/` | `GITHUB_PERSONAL_ACCESS_TOKEN` |
-| `atlassian` | HTTP, `mcp.atlassian.com/v2/mcp` | Browser (OAuth) login |
-
-## Prerequisites
-
-- Claude Code and/or Codex
-- **Node.js 18+** (`npx`)
-- **uv** (`uvx`)
-- **Python 3** (Codex tracing hook only)
-- **git** is optional. Without a git repo, always launch the agent from the project
-  folder itself, because that folder is then treated as the project root.
-
-## Setup
-
-### 1. Get the configuration
-
-```bash
-git clone https://github.com/Yuzhouboat/ai-agent-data-toolkit.git
-cd ai-agent-data-toolkit
+```text
+Please help me install this repo https://github.com/Yuzhouboat/ai-agent-data-toolkit
 ```
 
-To use it in an existing project instead, copy `.mcp.json`, `.claude/` and `.codex/`
-into that project's root, or let your agent do it with the prompt below.
+Existing settings are merged, not overwritten. Then [set credentials](#credentials) and
+[start the agent](#start).
 
-#### Install into any project with an AI agent
-
-Open Claude Code, Codex, or another coding agent **in the target project** and paste this
-prompt. It works on empty folders and on projects that already have agent configuration,
-merging instead of overwriting.
+<details>
+<summary>Detailed install prompt (full control over merging)</summary>
 
 ````text
 Install the ai-agent-data-toolkit configuration into the current project root
@@ -126,92 +89,53 @@ MLFLOW_TRACKING_PASSWORD, AWS credentials). Remind me to restart the agent,
 complete the Atlassian login, and, for Codex, trust the project and its Stop hook.
 ````
 
-To pin a specific version, replace `main` in `BASE` with a release tag.
+Replace `main` with a release tag to pin a version.
 
-### 2. Export credentials
+</details>
 
-In the terminal you will launch the agent from:
+Manual alternative: copy `.mcp.json`, `.claude/` and `.codex/` into your project root.
 
-```bash
-# MySQL
-export MYSQL_HOST='localhost'        # default: localhost
-export MYSQL_PORT='3306'             # default: 3306
-export MYSQL_DATABASE='your_database'
-export MYSQL_USER='your_user'
-export MYSQL_PASSWORD='your_password'
+**Requires:** Node.js 18+ (`npx`), uv (`uvx`), Python 3 (Codex tracing). Git is optional;
+without it, always launch the agent from the project folder.
 
-# GitHub
-export GITHUB_PERSONAL_ACCESS_TOKEN='your_github_token'
+## Credentials
 
-# MLflow tracing
-export MLFLOW_TRACKING_USERNAME='your_mlflow_username'
-export MLFLOW_TRACKING_PASSWORD='your_mlflow_password'
+These variables must be set in the environment the agent is launched from:
 
-# AWS: any standard credential source works; e.g. pick a profile
-export AWS_PROFILE='your_profile'
-```
+| Variable | Used by |
+|---|---|
+| `MYSQL_HOST`, `MYSQL_PORT` | MySQL (defaults `localhost`, `3306`) |
+| `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD` | MySQL |
+| `GITHUB_PERSONAL_ACCESS_TOKEN` | GitHub |
+| `MLFLOW_TRACKING_USERNAME`, `MLFLOW_TRACKING_PASSWORD` | MLflow tracing |
+| `AWS_PROFILE` (or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) | AWS / Redshift |
 
-Nothing is read from `.env` files. Restart the agent after changing variables, and keep
-credentials out of Git (`.env*` and `settings.local.json` are ignored).
+Atlassian needs no variable; it uses a browser login.
 
-### 3. Start the agent
+## Start
 
-**Claude Code**
+| | Claude Code | Codex |
+|---|---|---|
+| Launch | `claude` | `codex` |
+| First run | `/mcp` → log in to Atlassian | Trust the project, `codex mcp login atlassian`, then trust the `Stop` hook in `/hooks` |
 
-```bash
-claude
-```
+## What's included
 
-Project MCP servers are pre-approved via `enableAllProjectMcpServers`. Run `/mcp` to see
-their status and to complete the **Atlassian** browser login.
+| File | Purpose |
+|---|---|
+| `.mcp.json` | Claude MCP servers: `mysql`, `aws-mcp` (us-east-1), `github`, `atlassian` |
+| `.claude/settings.json` | Enables the servers, MLflow destination and `Stop` tracing hook |
+| `.codex/config.toml` | Codex MCP servers (same four) |
+| `.codex/hooks.json`, `.codex/hooks/mlflow_stop.py` | Codex `Stop` hook that sends each turn to MLflow |
+| `.codex/mlflow-tracing.json` | Codex MLflow destination |
 
-**Codex**
-
-```bash
-codex
-```
-
-1. Trust the project when prompted, otherwise `.codex/config.toml` is not loaded.
-2. Log in to Atlassian: `codex mcp login atlassian` (or via `/mcp`).
-3. Open `/hooks` (or **Review hooks** in the desktop app) and trust the `Stop` hook.
-   Project trust and hook trust are separate; tracing is skipped until the hook is trusted.
-
-Launch Codex from the project root so its configuration is discovered. This matters
-most outside a git repo, where Codex has no `.git` folder to locate the root from.
-
-## MLflow tracing
-
-Both agents send each completed turn to `https://mlflow.yliumono.click`,
-experiment `yliu` (ID `2`).
-
-- **Claude Code**: `Stop` hook runs `@mlflow/claude-code@0.5.0`. Destination is set in
-  the `env` block of `.claude/settings.json`; override it per user in
-  `.claude/settings.local.json`.
-- **Codex**: `Stop` hook runs `.codex/hooks/mlflow_stop.py`, which reads the last user
-  prompt from the Codex transcript and calls `@mlflow/codex@0.4.0 notify-hook`.
-  Change the destination in `.codex/mlflow-tracing.json`, or export
-  `MLFLOW_TRACKING_URI` / `MLFLOW_EXPERIMENT_ID`.
-
-Tracing failures produce a short warning and never block the turn; no transcript
-content or credentials are echoed. The Codex adapter depends on Codex's transcript
-format, so review it after Codex upgrades if prompts stop appearing in MLflow.
-
-## Try it
-
-- "List the tables in my MySQL database and describe their columns."
-- "List the Redshift workgroups I can access in us-east-1."
-- "Summarize the open issues in owner/repository."
-- "Find Jira issues assigned to me that are in progress."
-
-What the agent can reach depends on your credentials and permissions.
+Traces go to `https://mlflow.yliumono.click`, experiment `yliu` (ID `2`). To change it,
+edit `env` in `.claude/settings.json` (or `.claude/settings.local.json`) and
+`.codex/mlflow-tracing.json`. Tracing failures only warn; they never block a turn.
 
 ## Troubleshooting
 
-- **A server shows as failed / missing tools**: check prerequisites (`npx`, `uvx`) and the
-  env vars above, then restart the agent from the same terminal.
-- **AWS works but Redshift queries fail**: AWS authentication alone doesn't grant Redshift
-  data access; check the IAM permissions for the workgroup/cluster.
-- **Atlassian tools unavailable**: re-run the login (`/mcp` in Claude, `codex mcp login atlassian`).
-- **Codex traces missing**: confirm the project and its `Stop` hook are trusted in `/hooks`.
-- **Region**: AWS MCP is pinned to `us-east-1`; edit the URL in `.mcp.json` and
-  `.codex/config.toml` to change it.
+- **Server failed / tools missing:** check `npx`, `uvx` and the env vars, then restart the agent from that terminal.
+- **Redshift queries fail:** your AWS identity needs Redshift data permissions, not just login.
+- **Atlassian unavailable:** log in again (`/mcp` or `codex mcp login atlassian`).
+- **No Codex traces:** make sure the project and its `Stop` hook are trusted in `/hooks`.
