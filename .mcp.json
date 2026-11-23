@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "atlassian": {
+      "type": "http",
+      "url": "https://mcp.atlassian.com/v2/mcp"
+    },
+    "mysql": {
+      "command": "npx",
+      "args": ["-y", "@toolbox-sdk/server@latest", "--prebuilt", "mysql", "--stdio"],
+      "env": {
+        "MYSQL_HOST": "${MYSQL_HOST:-localhost}",
+        "MYSQL_PORT": "${MYSQL_PORT:-3306}",
+        "MYSQL_DATABASE": "${MYSQL_DATABASE}",
+        "MYSQL_USER": "${MYSQL_USER}",
+        "MYSQL_PASSWORD": "${MYSQL_PASSWORD}"
+      }
+    },
+    "aws-mcp": {
+      "command": "uvx",
+      "args": ["mcp-proxy-for-aws@1.6.3", "https://aws-mcp.us-east-1.api.aws/mcp"]
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      }
+    }
+  }
+}

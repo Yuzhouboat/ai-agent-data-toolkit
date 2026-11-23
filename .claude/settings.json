@@ -1,0 +1,28 @@
+{
+  "env": {
+    "MLFLOW_CLAUDE_TRACING_ENABLED": "true",
+    "MLFLOW_TRACKING_URI": "https://mlflow.yliumono.click",
+    "MLFLOW_EXPERIMENT_ID": "2",
+    "MLFLOW_EXPERIMENT_NAME": "yliu"
+  },
+  "enabledMcpjsonServers": [
+    "mysql",
+    "aws-mcp",
+    "github",
+    "atlassian"
+  ],
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx -y -p @mlflow/claude-code@0.5.0 -c 'node \"$(dirname \"$(realpath \"$(command -v mlflow-claude-code)\")\")/stop.cjs\"'",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  },
+  "enableAllProjectMcpServers": true
+}

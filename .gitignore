@@ -1,9 +1,34 @@
-__pycache__/
-*.pyc
+# Secrets and local credentials
 .env
 .env.*
-.claude/settings.local.json
-*.csv
+!.env.example
+*.pem
+*.key
 
-# Playwright MCP snapshots/screenshots (may contain secrets)
+# Per-user agent overrides (never commit)
+.claude/settings.local.json
+.claude/*.local.*
+.codex/*.local.*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# Query results / data exports (may contain sensitive data)
+*.csv
+*.tsv
+*.parquet
+
+# Browser automation snapshots/screenshots (may contain secrets)
 .playwright-mcp/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

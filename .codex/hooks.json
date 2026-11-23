@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 __MLFLOW_STOP_SCRIPT__",
+            "command": "python3 \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.codex/hooks/mlflow_stop.py\"",
             "timeout": 60
           }
         ]
