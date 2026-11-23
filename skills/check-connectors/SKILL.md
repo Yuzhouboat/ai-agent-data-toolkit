@@ -1,6 +1,6 @@
 ---
 name: check-connectors
-description: Check this project's MySQL, AWS/Redshift, and GitHub integrations when asked to verify connector tools, credentials, or connectivity.
+description: Check this project's MySQL, AWS/Redshift, GitHub, and Atlassian integrations when asked to verify connector tools, credentials, or connectivity.
 ---
 
 Verify the toolkit's configured connector integrations with small, read-only probes. Report
@@ -19,6 +19,7 @@ servers. Use the actual tool schemas; names vary by agent and plugin.
 | AWS | Through the configured AWS MCP tools, request STS caller identity, or another supported minimal identity operation. Report successful authentication without reproducing account identifiers. A successful local AWS CLI call alone does not verify the MCP server. |
 | Redshift | If available through the AWS tools, make a bounded read-only cluster or serverless workgroup listing. If a specific warehouse and database are configured and an SQL tool is available, use `SELECT 1`; otherwise mark SQL access untested. AWS identity alone does not prove Redshift permissions or database access. |
 | GitHub | Use the GitHub MCP tool's authenticated current-user operation when available. Otherwise use a small authenticated read against a repository already identified by the project. A public anonymous read does not prove the configured token works. |
+| Atlassian | Use the configured Atlassian MCP server's authenticated current-user or accessible-sites operation. If tools require discovery, discover the relevant read operation first. When a Jira issue is already identified by the project or user, optionally read that issue to verify Jira permissions. Site discovery alone does not prove issue access or write permissions. |
 
 For every integration, distinguish tool availability, remote connectivity/authentication,
 and the permissions exercised by the probe. If the tool is unavailable, report that and the
@@ -30,9 +31,18 @@ not count as an MCP success. Continue checking the other integrations after a fa
 When diagnosing missing configuration, inspect only whether named variables are present
 and nonempty. The kit uses `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`,
 `GITHUB_PERSONAL_ACCESS_TOKEN`. MySQL host and port have defaults.
-AWS may authenticate through profiles, SSO, or the default credential chain. Missing
-environment variables alone do not prove authentication is broken. The running agent may also have a different environment
-from the terminal where credentials were set.
+AWS may authenticate through profiles, SSO, or the default credential chain.
+Missing environment variables alone do not prove authentication is broken. The running
+agent may also have a different environment from the terminal where credentials were set.
+
+Atlassian uses the agent client's browser-based OAuth login. For missing or expired
+authentication, direct Codex users to run `codex mcp login atlassian` from the trusted
+destination project, or Claude users to open `/mcp` and authenticate `atlassian`.
+Have the user complete browser authorization and restart the agent before retrying.
+For authorization errors after login, check account permissions and organization MCP
+access policies. When a tool requires `cloudId`, discover it with an available
+read-only site operation or use a project/user-provided value; otherwise mark the
+probe untested and request the site identifier. Keep login separate from checks.
 
 Keep secrets out of tool arguments and chat output: never dump environment variables,
 credential files, authorization headers, or raw config containing credentials. Pass existing
@@ -45,7 +55,7 @@ give a concrete next step without retry loops or automatic fixes.
 
 ## Result
 
-Return one compact table with rows for MySQL, AWS, Redshift, and GitHub and columns
+Return one compact table with rows for MySQL, AWS, Redshift, GitHub, and Atlassian and columns
 for status, evidence, and next step. Use `PASS` only for the precise operation actually
 verified, `FAIL` for an attempted operation that failed, and `UNTESTED` when a necessary
 tool, target, or permission to run the probe was unavailable. Include only the requested

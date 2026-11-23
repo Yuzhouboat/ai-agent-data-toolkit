@@ -15,3 +15,6 @@ startup_timeout_sec = 120
 [mcp_servers.github]
 url = "https://api.githubcopilot.com/mcp/"
 bearer_token_env_var = "GITHUB_PERSONAL_ACCESS_TOKEN"
+
+[mcp_servers.atlassian]
+url = "https://mcp.atlassian.com/v2/mcp"

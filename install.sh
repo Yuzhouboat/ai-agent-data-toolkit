@@ -4,7 +4,7 @@
 set -euo pipefail
 
 # Keep this release tag fixed: remote templates must match the installer.
-KIT_VERSION="v1.1.3"
+KIT_VERSION="v1.1.4"
 USAGE="Usage: install.sh [--claude | --codex] [--uninstall] [project-dir]"
 mode=local
 agent=both
@@ -370,6 +370,7 @@ def install():
     print("Next: set the credentials listed in the kit's README (MySQL, AWS, GitHub, MLflow),")
     install_plugins(settings)
     print(f"then run `claude` in {project}. If already running, use /reload-plugins.")
+    print("For Jira/Confluence, open /mcp in Claude and authenticate the atlassian server.")
     print("Then use /check-connectors to verify tools and authentication with read-only checks.")
 
 
@@ -734,6 +735,7 @@ record.write_text(json.dumps(manifest, indent=2) + "\n")
 print(f"Installed local Codex kit {version} into {project}.")
 print("Set MySQL, AWS, GitHub and MLflow credentials as described in the README.")
 print("Then start codex, trust the project, and check /mcp. No services were contacted by this installer.")
+print("For Jira/Confluence, run codex mcp login atlassian from the destination project and complete browser login.")
 print("Review and trust the project Stop hook using /hooks or Review hooks before automatic MLflow tracing can run.")
 print("Use $check-connectors to verify tools and authentication with read-only checks.")
 PY
