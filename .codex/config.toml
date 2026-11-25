@@ -18,3 +18,9 @@ bearer_token_env_var = "GITHUB_PERSONAL_ACCESS_TOKEN"
 
 [mcp_servers.atlassian]
 url = "https://mcp.atlassian.com/v2/mcp"
+
+[mcp_servers.tableau]
+command = "sh"
+args = ["-c", "export SERVER=\"$TABLEAU_SERVER\" SITE_NAME=\"$TABLEAU_SITE_NAME\" PAT_NAME=\"$TABLEAU_PAT_NAME\" PAT_VALUE=\"$TABLEAU_PAT_VALUE\" AUTH=\"${TABLEAU_AUTH:-pat}\"; exec npx -y @tableau/mcp-server@6.0.4"]
+env_vars = ["TABLEAU_SERVER", "TABLEAU_SITE_NAME", "TABLEAU_PAT_NAME", "TABLEAU_PAT_VALUE", "TABLEAU_AUTH"]
+startup_timeout_sec = 120

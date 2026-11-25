@@ -9,7 +9,8 @@
     "mysql",
     "aws-mcp",
     "github",
-    "atlassian"
+    "atlassian",
+    "tableau"
   ],
   "hooks": {
     "Stop": [
